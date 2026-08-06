@@ -1,0 +1,22 @@
+{
+  "name": "yona-link",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter @yona-link/* dev",
+    "dev:server": "pnpm --filter @yona-link/server dev",
+    "dev:web": "pnpm --filter @yona-link/web dev",
+    "build": "pnpm --filter @yona-link/web build",
+    "start": "pnpm --filter @yona-link/server start",
+    "test": "pnpm --filter @yona-link/server test",
+    "typecheck": "pnpm --filter @yona-link/server typecheck && pnpm --filter @yona-link/web typecheck",
+    "format": "oxfmt -c .oxfmtrc.json .",
+    "format:check": "oxfmt -c .oxfmtrc.json --check .",
+    "db:generate": "pnpm --filter @yona-link/server db:generate",
+    "db:migrate": "pnpm --filter @yona-link/server db:migrate",
+    "db:push": "pnpm --filter @yona-link/server db:push"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.62.0"
+  }
+}

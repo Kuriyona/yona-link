@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "bracketSameLine": true,
+  "singleQuote": true,
+  "trailingComma": "none",
+  "ignorePatterns": ["**/drizzle", "**/dist"]
+}
