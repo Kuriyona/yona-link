@@ -1,11 +1,9 @@
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
-import { runMigrations } from './db/migrate';
 
 const config = loadConfig();
 const db = createDb(config.databasePath);
-runMigrations(db);
 
 createApp(db, config).listen(config.port);
 

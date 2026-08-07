@@ -35,7 +35,7 @@ yona-link/
 ├── packages/
 │   ├── server/                # 核心服务器（Bun + Elysia + SQLite）
 │   │   ├── src/
-│   │   │   ├── index.ts       # 入口：加载配置/DB 并自动迁移，监听单端口
+│   │   │   ├── index.ts       # 入口：加载配置/DB，监听单端口（迁移单独执行）
 │   │   │   ├── app.ts         # 合并 API + 短链跳转，统一 JSON 404
 │   │   │   ├── config.ts      # 环境变量配置
 │   │   │   ├── db/            # Drizzle schema、bun:sqlite 客户端、迁移
@@ -69,7 +69,7 @@ pnpm --filter @yona-link/server db:generate
 pnpm --filter @yona-link/server db:migrate
 ```
 
-> 服务器启动时会自动应用未执行的迁移，`db:push` 可用于开发期直接同步 schema（不生成迁移文件）。
+> 服务器启动**不会**自动执行迁移，改过 schema 后需手动执行上面的迁移命令（生产部署见「服务器单文件打包与部署」）。`db:push` 可用于开发期直接同步 schema（不生成迁移文件）。
 
 ### 配置
 
@@ -91,6 +91,7 @@ cp packages/web/.env.example packages/web/.env
 | `HASH_LENGTH`                | `6`                   | 随机 hash 长度（3-32）                               |
 | `RETENTION_DAYS`             | `7`                   | 删除/失效后保留天数                                  |
 | `DATABASE_PATH`              | `./data/yona-link.db` | SQLite 数据库文件路径                                |
+| `MIGRATIONS_FOLDER`          | `./drizzle`           | 迁移脚本读取的迁移文件目录                           |
 | `API_KEY_PREFIX`             | `yl_`                 | 生成普通 API Key 的可见前缀                          |
 | `RATE_LIMIT_MAX`             | `120`                 | API 每分钟每 IP 请求上限                             |
 | `RESPONSE_301_FOR_PERMANENT` | `false`               | 长期链接跳转是否使用 301（默认 302）                 |
@@ -110,9 +111,60 @@ pnpm dev:web
 # 生产：构建 Web 产物
 pnpm build
 
-# 生产：启动核心服务器（自动迁移 + 监听单端口）
+# 生产：启动核心服务器（不会自动迁移，监听单端口）
 pnpm start
 ```
+
+## 服务器单文件打包与部署
+
+服务器可打包为**单文件 JS**，配合 `.env` 在任意目录直接运行——无需安装依赖、无需源码，只需 Bun。
+
+### 打包
+
+```bash
+pnpm build:server
+```
+
+产物位于 `packages/server/dist/`：
+
+```
+dist/
+├── yona-link.js      # 服务器单文件（API + 短链跳转，不含迁移逻辑）
+├── migrate.js        # 独立迁移脚本
+└── drizzle/          # 迁移 SQL 目录（migrate.js 运行所需）
+```
+
+### 部署
+
+将产物与 `.env` 放入同一目录（`drizzle/` 须与 `migrate.js` 同目录，或通过 `MIGRATIONS_FOLDER` 指定）：
+
+```
+/opt/yona-link/
+├── yona-link.js
+├── migrate.js
+├── drizzle/
+└── .env
+```
+
+`.env` 至少需要配置 `ADMIN_KEY`（必填），完整示例见 `packages/server/.env.example`。Bun 会自动加载当前目录的 `.env`。
+
+首次部署或升级版本后，先执行迁移（可重复执行，无新迁移时是 no-op）：
+
+```bash
+bun migrate.js
+```
+
+启动服务（服务器不会自动迁移，也不依赖任何安装步骤）：
+
+```bash
+bun yona-link.js
+```
+
+> 默认 `DATABASE_PATH` 为当前目录下的 `data/yona-link.db`；`MIGRATIONS_FOLDER` 默认取当前目录下的 `drizzle/`，均可通过环境变量覆盖。相对路径均基于启动时的当前目录解析。
+
+### 升级
+
+用新版 `yona-link.js` / `migrate.js` / `drizzle/` 替换旧文件 → 重新执行 `bun migrate.js` → 重启服务。
 
 ## Web 管理面板
 

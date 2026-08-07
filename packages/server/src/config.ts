@@ -26,7 +26,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = Bun.env): AppConfig {
     hashLength: int(env.HASH_LENGTH, 6),
     retentionDays: int(env.RETENTION_DAYS, 7),
     adminKey: env.ADMIN_KEY ?? '',
-    databasePath: env.DATABASE_PATH ?? resolve(import.meta.dir, '../data/yona-link.db'),
+    databasePath: env.DATABASE_PATH ?? resolve(process.cwd(), 'data/yona-link.db'),
     apiKeyPrefix: env.API_KEY_PREFIX ?? 'yl_',
     rateLimitMax: int(env.RATE_LIMIT_MAX, 120),
     response301ForPermanent: env.RESPONSE_301_FOR_PERMANENT === 'true'

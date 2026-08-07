@@ -7,6 +7,7 @@
     "dev:server": "pnpm --filter @yona-link/server dev",
     "dev:web": "pnpm --filter @yona-link/web dev",
     "build": "pnpm --filter @yona-link/web build",
+    "build:server": "pnpm --filter @yona-link/server build:server",
     "start": "pnpm --filter @yona-link/server start",
     "test": "pnpm --filter @yona-link/server test",
     "typecheck": "pnpm --filter @yona-link/server typecheck && pnpm --filter @yona-link/web typecheck",

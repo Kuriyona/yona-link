@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
+    "build:server": "bun scripts/build-server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:run": "bun src/db/migrate.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

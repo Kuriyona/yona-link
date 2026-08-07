@@ -9,7 +9,8 @@ Yona-Link: self-hosted short-link service. pnpm monorepo with two packages: `pac
 - `pnpm typecheck` — server `tsc --noEmit` + web `vue-tsc -b`
 - `pnpm format` / `pnpm format:check` — oxfmt with `.oxfmtrc.json`. **There is no lint gate.**
 - `pnpm build` — builds web only (server is run via `bun src/index.ts`).
-- DB: `pnpm db:generate` / `db:migrate` (drizzle-kit). Server auto-applies pending migrations at boot (`src/index.ts` → `runMigrations`). `@libsql/client` is a devDep used only by the drizzle-kit CLI; runtime DB is `bun:sqlite`.
+- `pnpm build:server` — bundles server into `packages/server/dist/`: single-file `yona-link.js` + standalone `migrate.js` + a copy of `drizzle/` (build script: `packages/server/scripts/build-server.ts`). Deploy = drop those + `.env` in a dir, run `bun migrate.js` then `bun yona-link.js` (Bun auto-loads `.env` from cwd).
+- DB: `pnpm db:generate` / `db:migrate` (drizzle-kit), or `pnpm db:migrate:run` (Bun CLI `src/db/migrate.ts`, `MIGRATIONS_FOLDER` env override). Migrations are **separate from server startup** — the server never auto-migrates; run one of these after `db:generate`. `@libsql/client` is a devDep used only by the drizzle-kit CLI; runtime DB is `bun:sqlite`.
 
 ## Env & config
 
