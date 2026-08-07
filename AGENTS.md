@@ -14,13 +14,16 @@ Yona-Link: self-hosted short-link service. pnpm monorepo with two packages: `pac
 
 ## Env & config
 
-- Bun auto-loads `packages/server/.env` (a real, gitignored `.env` exists there). `ADMIN_KEY` is required — startup throws without it. `PORT` defaults to 3000. Run server commands from `packages/server` since relative `DATABASE_PATH` resolves against cwd.
+- Bun auto-loads `packages/server/.env` (a real, gitignored `.env` exists there). `ADMIN_PASSWORD` is required — startup throws without it (`ADMIN_USERNAME` defaults to `admin`). `PORT` defaults to 3000. Run server commands from `packages/server` since relative `DATABASE_PATH` resolves against cwd.
 - Prod web API base: `VITE_API_BASE_URL` (default `/api`).
 
 ## Server architecture (single port, merged)
 
 - One port serves both: redirects at root, management API under `/api/*`. `src/app.ts` merges `createApiApp` + `createLinkApp`.
 - `/api` and `/health` are reserved. Codes `api`/`health` (case-insensitive) are rejected when creating links and skipped in hash generation (`RESERVED_PATHS` / `isReservedPath` in `src/types.ts`).
+- **Auth = user accounts + sessions** (no API keys). `POST /api/auth/login` (username+password) → opaque token stored as SHA-256 in `sessions` (`src/services/session-service.ts`). Passwords hashed with `Bun.password` (argon2id) in `src/services/user-service.ts`. Admin user seeded from env at boot (`ensureAdminUser`, also backfills legacy `links.created_by` to admin).
+- **Roles**: `admin` (all perms incl. `links:view_all`, `users:manage`) vs `user` (only `links:read/create/update/delete/stats`) — `permissionsForRole` in `src/types.ts`. Every link stores `created_by`; non-admin list/get/update/delete/stats are scoped to the owner (cross-user access returns 404).
+- `GET /api/links` = own links; `GET /api/links/all` (admin only) = all links + `?userId=` filter. User management: `src/api/routes/users.ts`.
 - Unified JSON 404 for unmatched routes lives in `src/app.ts` `.onError` on `code === 'NOT_FOUND'`. **Do not** add a `*` or `/:path*` catch-all route — it swallows short-link redirects or conflicts with existing dynamic routes. Elysia 1.4 has no `notFound` config.
 - Short-link redirects use ONE route `/:code`; alias vs hash is decided by leading `@`. **Keep this design**: Elysia's live Bun router mis-routes a separate `/@:code` route (it matches `/:code` with the `@` kept in the param) even though `app.handle()` behaves correctly.
 - CORS: `@elysiajs/cors` with `origin: '*'` and `credentials: false` (`*` + credentials is invalid).
@@ -28,13 +31,14 @@ Yona-Link: self-hosted short-link service. pnpm monorepo with two packages: `pac
 ## Testing
 
 - Tests use in-memory SQLite and call `app.handle(new Request(...))` — no live server.
-- Helpers in `tests/helpers.ts`: `createTestDb()`, `testConfig(overrides)`, `createLinkAppWithDb`. API tests build the merged app: `createApp(db, testConfig())`.
+- Helpers in `tests/helpers.ts`: `createTestDb()` (migrations only), `createAuthedTestDb()` (+ seed admin), `loginAs(app, username, password)` → token, `authed(url, token, init)`, `testConfig(overrides)`, `createLinkAppWithDb`. API tests build the merged app: `createApp(db, testConfig())`.
 - API responses are `{ ok, data }` / `{ ok:false, error:{ code, message } }` — data sits at `data.data` when parsing.
 - Because tests use `handle()`, live-server routing regressions (e.g. the `@`-alias quirk) are not covered — verify with a real `pnpm dev` + curl when touching routing.
 
 ## Web specifics
 
-- Multi-account login: base URL + API key saved as "profiles" in localStorage (`src/api/credentials.ts`, keys `yl_profiles` / `yl_profile_active`). `client.ts` reads base URL + key from the active profile on **every request** (no static base URL) — changing/adding profiles there affects all API calls.
+- Multi-account login: base URL + username + token saved as "profiles" in localStorage (`src/api/credentials.ts`, keys `yl_profiles` / `yl_profile_active`). `client.ts` reads base URL + token from the active profile on **every request** (no static base URL) — changing/adding profiles there affects all API calls.
+- Permission gating: `auth.hasPermission('...')` everywhere. Routes `links:view_all` (`/links/all`) and `users:manage` (`/users`) are admin-only via `permissionsForRole`.
 - `@/` alias → `src/`. Vite dev proxies `/api` → `http://localhost:3000` (`API_PROXY_TARGET` overrides).
 
 ## Style

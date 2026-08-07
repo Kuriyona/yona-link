@@ -1,32 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 
 import { createApp } from '../src/app';
-import { createTestDb, testConfig } from './helpers';
-
-const ADMIN = 'test-admin-key';
+import { authed, createAuthedTestDb, loginAs, TEST_ADMIN, testConfig } from './helpers';
 
 function createAppForTest() {
-  const db = createTestDb();
-  const app = createApp(db, testConfig());
-  return { db, app };
-}
-
-function authed(url: string, init: RequestInit = {}, key = ADMIN): Request {
-  return new Request(url, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${key}`,
-      'content-type': 'application/json',
-      ...(init.headers ?? {})
-    }
-  });
+  return createAuthedTestDb().then((db) => ({ db, app: createApp(db, testConfig()) }));
 }
 
 describe('merged app', () => {
   it('短链跳转与 API 共用同一实例', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
+    const token = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
     const created = await app.handle(
-      authed('http://localhost/api/links', {
+      authed('http://localhost/api/links', token, {
         method: 'POST',
         body: JSON.stringify({
           type: 'hash',
@@ -43,27 +29,28 @@ describe('merged app', () => {
   });
 
   it('/api 为保留路径，返回 404 而非跳转', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
     const res = await app.handle(new Request('http://localhost/api'));
     expect(res.status).toBe(404);
   });
 
   it('/api 子路径不会命中短链路由', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
     const res = await app.handle(new Request('http://localhost/api/not-a-route'));
     expect(res.status).toBe(404);
   });
 
   it('/health 返回健康检查', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
     const res = await app.handle(new Request('http://localhost/health'));
     expect(res.status).toBe(200);
   });
 
   it('拒绝创建 code=api 的别名（保留路径）', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
+    const token = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
     const res = await app.handle(
-      authed('http://localhost/api/links', {
+      authed('http://localhost/api/links', token, {
         method: 'POST',
         body: JSON.stringify({
           type: 'alias',
@@ -79,9 +66,10 @@ describe('merged app', () => {
   });
 
   it('拒绝创建 code=health 的别名（保留路径，忽略大小写）', async () => {
-    const { app } = createAppForTest();
+    const { app } = await createAppForTest();
+    const token = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
     const res = await app.handle(
-      authed('http://localhost/api/links', {
+      authed('http://localhost/api/links', token, {
         method: 'POST',
         body: JSON.stringify({
           type: 'alias',

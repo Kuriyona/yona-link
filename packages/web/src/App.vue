@@ -13,8 +13,7 @@ const router = useRouter();
 const settingsOpen = ref(false);
 
 function logout() {
-  auth.logout();
-  router.push({ name: 'login' });
+  void auth.logout().then(() => router.push({ name: 'login' }));
 }
 </script>
 
@@ -24,7 +23,10 @@ function logout() {
       <div class="brand">Yona-Link</div>
       <nav class="nav">
         <router-link to="/">短链接</router-link>
-        <router-link v-if="auth.hasPermission('keys:manage')" to="/keys">API Keys</router-link>
+        <router-link v-if="auth.hasPermission('links:view_all')" to="/links/all"
+          >全部链接</router-link
+        >
+        <router-link v-if="auth.hasPermission('users:manage')" to="/users">用户管理</router-link>
       </nav>
       <div class="sidebar-foot">
         <button
@@ -32,9 +34,12 @@ function logout() {
           class="link-btn"
           :title="`当前账号: ${profiles.active?.name ?? ''}`"
           @click="settingsOpen = true">
-          {{ profiles.active ? `${profiles.active.name}` : 'API 配置' }}
+          {{ profiles.active ? `${profiles.active.name}` : '账号配置' }}
         </button>
-        <span class="muted">{{ auth.info?.name }}</span>
+        <span class="muted">
+          {{ auth.info?.username }}
+          <em v-if="auth.isAdmin" class="role-tag">管理员</em>
+        </span>
         <button type="button" class="link-btn" @click="logout">退出</button>
       </div>
     </aside>
@@ -107,6 +112,15 @@ function logout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.role-tag {
+  font-style: normal;
+  font-size: 11px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-radius: 999px;
+  padding: 0 6px;
 }
 
 .content {

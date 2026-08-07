@@ -11,11 +11,12 @@
   - `[domain]/api/*` → 管理 API（保留路径，不可被短链占用）
 - 短链支持**长期**与**临时**（可设置过期时间）
 - 删除或失效后进入**保留期**（默认 7 天，期内不可访问、code 不可复用，超期自动清理）
-- REST API 作为唯一管理方式，基于 API Key 鉴权
-  - 核心管理员 Key（环境变量 `ADMIN_KEY`）拥有全部权限
-  - 普通 Key 可自由创建/编辑，支持**细粒度权限**
+- REST API 作为唯一管理方式，基于**用户账号 + 会话 Token** 鉴权
+  - 管理员账号（环境变量 `ADMIN_USERNAME`/`ADMIN_PASSWORD`）拥有全部权限
+  - 管理员可创建/管理其他用户账号（创建、启停、删除、重置密码）
+  - 每条短链记录**创建者**；普通用户只能查看/管理自己创建的短链，管理员可查看全部用户短链
 - Web 管理页面：Vue 3 静态 SFC，最小化自写 CSS，无 UI 框架依赖
-  - **多账号配置**：可保存多套「API 地址 + API Key」账号并一键切换（浏览器 localStorage）
+  - **多账号配置**：可保存多套「API 地址 + 账号」并一键切换（浏览器 localStorage）
 
 ## 技术栈
 
@@ -39,8 +40,8 @@ yona-link/
 │   │   │   ├── app.ts         # 合并 API + 短链跳转，统一 JSON 404
 │   │   │   ├── config.ts      # 环境变量配置
 │   │   │   ├── db/            # Drizzle schema、bun:sqlite 客户端、迁移
-│   │   │   ├── services/      # 链接/Key 业务逻辑、hash 生成
-│   │   │   ├── api/           # /api 前缀的管理 API（auth、links、keys、cors）
+│   │   │   ├── services/      # 链接/用户/会话业务逻辑、hash 生成
+│   │   │   ├── api/           # /api 前缀的管理 API（auth、links、users、cors）
 │   │   │   └── link/          # 短链跳转路由
 │   │   ├── drizzle/           # 生成的 SQL 迁移文件
 │   │   └── tests/             # bun test（内存 SQLite）
@@ -48,7 +49,7 @@ yona-link/
 │       └── src/
 │           ├── api/           # HTTP 客户端与多账号凭据管理
 │           ├── stores/        # Pinia（auth / profiles）
-│           ├── views/         # 登录、短链接列表、编辑、统计、Key 管理
+│           ├── views/         # 登录、短链接列表、全部链接、编辑、统计、用户管理
 │           └── components/    # 通用弹窗（API 设置等）
 ```
 
@@ -84,7 +85,8 @@ cp packages/web/.env.example packages/web/.env
 
 | 变量                         | 默认值                | 说明                                                 |
 | ---------------------------- | --------------------- | ---------------------------------------------------- |
-| `ADMIN_KEY`                  | —（必填）             | 核心管理员 Key                                       |
+| `ADMIN_USERNAME`             | `admin`               | 管理员账号（启动时自动创建/同步）                    |
+| `ADMIN_PASSWORD`             | —（必填）             | 管理员密码                                           |
 | `PORT`                       | `3000`                | 服务端口（跳转与 API 共用）                          |
 | `DEFAULT_REDIRECT_URL`       | —                     | 根路径默认跳转目标                                   |
 | `PUBLIC_LINK_DOMAIN`         | —                     | 对外展示完整短链的域名（如 `https://s.example.com`） |
@@ -92,7 +94,7 @@ cp packages/web/.env.example packages/web/.env
 | `RETENTION_DAYS`             | `7`                   | 删除/失效后保留天数                                  |
 | `DATABASE_PATH`              | `./data/yona-link.db` | SQLite 数据库文件路径                                |
 | `MIGRATIONS_FOLDER`          | `./drizzle`           | 迁移脚本读取的迁移文件目录                           |
-| `API_KEY_PREFIX`             | `yl_`                 | 生成普通 API Key 的可见前缀                          |
+| `SESSION_TTL_DAYS`           | `7`                   | 登录会话有效期（天）                                 |
 | `RATE_LIMIT_MAX`             | `120`                 | API 每分钟每 IP 请求上限                             |
 | `RESPONSE_301_FOR_PERMANENT` | `false`               | 长期链接跳转是否使用 301（默认 302）                 |
 
@@ -146,7 +148,7 @@ dist/
 └── .env
 ```
 
-`.env` 至少需要配置 `ADMIN_KEY`（必填），完整示例见 `packages/server/.env.example`。Bun 会自动加载当前目录的 `.env`。
+`.env` 至少需要配置 `ADMIN_PASSWORD`（必填），完整示例见 `packages/server/.env.example`。Bun 会自动加载当前目录的 `.env`。
 
 首次部署或升级版本后，先执行迁移（可重复执行，无新迁移时是 no-op）：
 
@@ -170,23 +172,29 @@ bun yona-link.js
 
 访问 `http://localhost:5173`（开发）或部署后的静态站点：
 
-- **登录**：输入「配置名称（可选）+ API 地址 + API Key」，勾选「登录成功后保存为账号配置」即可保存多套账号；列表可一键切换、删除
-- **短链接**：分页/筛选列表、新建、编辑、删除（二次确认，提示保留期）、点击统计
-- **API Keys**（仅 `keys:manage` 权限）：创建（权限多选，明文仅显示一次）、编辑权限、启停、删除
-- 侧边栏显示当前账号名，点击可打开账号配置弹窗
+- **登录**：输入「配置名称（可选）+ API 地址 + 用户名 + 密码」，勾选「登录成功后保存为账号配置」即可保存多套账号；列表可一键切换、删除
+- **短链接**：分页/筛选列表（仅自己的短链）、新建、编辑、删除（二次确认，提示保留期）、点击统计
+- **全部链接**（仅管理员）：查看所有用户创建的短链，可按「创建者」筛选
+- **用户管理**（仅管理员）：创建用户（设置初始密码）、启停、重置密码、删除
+- 侧边栏显示当前用户名与角色，点击可打开账号配置弹窗
 
 ## 使用 API 创建第一个短链
 
 ```bash
-# 创建短链（随机 hash）
+# 1. 登录获取会话 Token
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"你的管理员密码"}' | jq -r .data.token)
+
+# 2. 创建短链（随机 hash）
 curl -X POST http://localhost:3000/api/links \
-  -H "Authorization: Bearer $ADMIN_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"type":"hash","targetUrl":"https://example.com","permanent":true}'
 
-# 创建自定义名称短链
+# 3. 创建自定义名称短链
 curl -X POST http://localhost:3000/api/links \
-  -H "Authorization: Bearer $ADMIN_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"type":"alias","code":"my-link","targetUrl":"https://example.com","permanent":false,"expiresAt":"2026-12-31T23:59:59Z"}'
 ```
@@ -196,25 +204,28 @@ curl -X POST http://localhost:3000/api/links \
 
 ## API 概览
 
-鉴权：请求头 `Authorization: Bearer <key>` 或 `X-API-Key: <key>`。
+鉴权：登录后请求头携带 `Authorization: Bearer <token>`。
 统一响应：`{ "ok": true, "data": ... }` / `{ "ok": false, "error": { "code", "message" } }`。
 
-| 方法/路径                    | 权限           | 说明                       |
-| ---------------------------- | -------------- | -------------------------- |
-| `GET /api/auth/verify`       | 任意有效 Key   | 校验 Key 并返回权限        |
-| `GET /api/system/info`       | 任意有效 Key   | 系统配置与链接计数         |
-| `POST /api/links`            | `links:create` | 创建短链                   |
-| `GET /api/links`             | `links:read`   | 分页/筛选列表              |
-| `GET /api/links/:code`       | `links:read`   | 详情                       |
-| `PATCH /api/links/:code`     | `links:update` | 更新                       |
-| `DELETE /api/links/:code`    | `links:delete` | 删除（进入保留期）         |
-| `GET /api/links/:code/stats` | `links:stats`  | 点击统计                   |
-| `GET /api/keys`              | `keys:manage`  | Key 列表                   |
-| `POST /api/keys`             | `keys:manage`  | 创建 Key（明文仅返回一次） |
-| `PATCH /api/keys/:id`        | `keys:manage`  | 编辑 Key                   |
-| `DELETE /api/keys/:id`       | `keys:manage`  | 删除 Key                   |
+| 方法/路径                    | 权限             | 说明                                     |
+| ---------------------------- | ---------------- | ---------------------------------------- |
+| `POST /api/auth/login`       | —                | 用户名 + 密码登录，返回 Token            |
+| `POST /api/auth/logout`      | 任意有效 Token   | 注销当前会话                             |
+| `GET /api/auth/verify`       | 任意有效 Token   | 校验 Token 并返回用户信息                |
+| `GET /api/system/info`       | 任意有效 Token   | 系统配置与链接/用户计数                  |
+| `POST /api/links`            | `links:create`   | 创建短链（归属当前用户）                 |
+| `GET /api/links`             | `links:read`     | 分页/筛选列表（仅自己的短链）            |
+| `GET /api/links/all`         | `links:view_all` | 全部短链（仅管理员，支持 `userId` 筛选） |
+| `GET /api/links/:code`       | `links:read`     | 详情（只能访问自己的）                   |
+| `PATCH /api/links/:code`     | `links:update`   | 更新（只能操作自己的）                   |
+| `DELETE /api/links/:code`    | `links:delete`   | 删除（进入保留期）                       |
+| `GET /api/links/:code/stats` | `links:stats`    | 点击统计                                 |
+| `GET /api/users`             | `users:manage`   | 用户列表（含链接数）                     |
+| `POST /api/users`            | `users:manage`   | 创建用户（用户名 + 密码）                |
+| `PATCH /api/users/:id`       | `users:manage`   | 启停 / 重置密码                          |
+| `DELETE /api/users/:id`      | `users:manage`   | 删除用户                                 |
 
-权限：`links:read`、`links:create`、`links:update`、`links:delete`、`links:stats`、`keys:manage`。
+权限：普通用户拥有 `links:read`/`links:create`/`links:update`/`links:delete`/`links:stats`；管理员额外拥有 `links:view_all` 与 `users:manage`。
 
 ## Web 管理页面部署
 
@@ -236,7 +247,8 @@ pnpm format:check  # 检查代码是否已格式化
 
 ## 安全说明
 
-- 普通 API Key 仅存储 SHA-256 摘要，创建后明文只展示一次
-- `ADMIN_KEY` 使用恒定时间比较
+- 用户密码使用 **argon2id** 哈希（Bun 内置），不以明文存储
+- 登录会话为随机不透明 Token，仅存 SHA-256 摘要，可被注销/撤销
+- 普通用户只能访问自己创建的短链，越权访问返回 404（不泄露存在性）
 - URL 仅允许 http/https 协议；code 字符集 `[a-zA-Z0-9_-]`
-- API 有每分钟每 IP 限流（`RATE_LIMIT_MAX`）
+- API 有每分钟每 IP 限流（`RATE_LIMIT_MAX`），含登录接口

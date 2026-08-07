@@ -1,11 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import type { Permission } from '@/api/types';
 import { useAuthStore } from '@/stores/auth';
-import Keys from '@/views/Keys.vue';
+import AllLinks from '@/views/AllLinks.vue';
 import LinkEdit from '@/views/LinkEdit.vue';
 import Links from '@/views/Links.vue';
 import Login from '@/views/Login.vue';
 import Stats from '@/views/Stats.vue';
+import Users from '@/views/Users.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -31,6 +32,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresPermission: 'links:create' }
     },
     {
+      path: '/links/all',
+      name: 'all-links',
+      component: AllLinks,
+      meta: { requiresAuth: true, requiresPermission: 'links:view_all' }
+    },
+    {
       path: '/links/:code/edit',
       name: 'link-edit',
       component: LinkEdit,
@@ -43,10 +50,10 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresPermission: 'links:stats' }
     },
     {
-      path: '/keys',
-      name: 'keys',
-      component: Keys,
-      meta: { requiresAuth: true, requiresPermission: 'keys:manage' }
+      path: '/users',
+      name: 'users',
+      component: Users,
+      meta: { requiresAuth: true, requiresPermission: 'users:manage' }
     }
   ]
 });
@@ -54,17 +61,17 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
 
-  if (!auth.key && to.name !== 'login') {
+  if (!auth.token && to.name !== 'login') {
     return { name: 'login' };
   }
-  if (auth.key && to.name === 'login') {
+  if (auth.token && to.name === 'login') {
     return { name: 'links' };
   }
-  if (auth.key && !auth.info) {
+  if (auth.token && !auth.info) {
     try {
       await auth.refresh();
     } catch {
-      auth.logout();
+      await auth.logout();
       return { name: 'login' };
     }
   }

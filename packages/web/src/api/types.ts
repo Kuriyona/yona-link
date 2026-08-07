@@ -4,7 +4,8 @@ export const PERMISSIONS = {
   LINKS_UPDATE: 'links:update',
   LINKS_DELETE: 'links:delete',
   LINKS_STATS: 'links:stats',
-  KEYS_MANAGE: 'keys:manage'
+  LINKS_VIEW_ALL: 'links:view_all',
+  USERS_MANAGE: 'users:manage'
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -15,7 +16,20 @@ export interface Profile {
   id: string;
   name: string;
   baseUrl: string;
-  apiKey: string;
+  username: string;
+  token: string;
+}
+
+export interface UserInfo {
+  id: number;
+  username: string;
+  role: 'admin' | 'user';
+  permissions: Permission[];
+}
+
+export interface LoginResult {
+  token: string;
+  user: UserInfo;
 }
 
 export interface LinkItem {
@@ -31,6 +45,8 @@ export interface LinkItem {
   lastClickedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  createdById: number | null;
+  createdBy: string | null;
 }
 
 export interface ListLinksResult {
@@ -47,24 +63,15 @@ export interface LinkStats {
   lastClickedAt: string | null;
 }
 
-export interface ApiKeyInfo {
+export interface UserRow {
   id: number;
-  name: string;
-  permissions: Permission[];
+  username: string;
+  role: 'admin' | 'user';
   enabled: boolean;
+  linkCount: number;
   createdAt: string;
-  lastUsedAt: string | null;
-}
-
-export interface CreatedKey {
-  key: { id: number; permissions: Permission[]; enabled: boolean };
-  rawKey: string;
-}
-
-export interface AuthInfo {
-  kind: 'admin' | 'key';
-  name: string;
-  permissions: Permission[];
+  updatedAt: string;
+  lastLoginAt: string | null;
 }
 
 export interface SystemInfo {
@@ -72,4 +79,5 @@ export interface SystemInfo {
   retentionDays: number;
   publicLinkDomain: string | null;
   counts: { total: number; active: number; retired: number };
+  userCount: number;
 }

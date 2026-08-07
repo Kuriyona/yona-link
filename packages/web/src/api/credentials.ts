@@ -21,7 +21,7 @@ function readProfiles(): Profile[] {
           !!p &&
           typeof p === 'object' &&
           typeof (p as Profile).baseUrl === 'string' &&
-          typeof (p as Profile).apiKey === 'string'
+          typeof (p as Profile).token === 'string'
       );
     }
   } catch {
@@ -49,8 +49,12 @@ export function getApiBaseUrl(): string {
   return getActiveProfile()?.baseUrl ?? normalizeEndpoint(DEFAULT_ENDPOINT);
 }
 
-export function getApiKey(): string | null {
-  return getActiveProfile()?.apiKey ?? null;
+export function getToken(): string | null {
+  return getActiveProfile()?.token ?? null;
+}
+
+export function getUsername(): string | null {
+  return getActiveProfile()?.username ?? null;
 }
 
 export function setActiveProfile(id: string): void {
@@ -58,27 +62,45 @@ export function setActiveProfile(id: string): void {
   localStorage.setItem(KEY_ACTIVE, id);
 }
 
-export function setSessionProfile(baseUrl: string, apiKey: string): void {
+export function setSessionProfile(baseUrl: string, username: string, token: string): void {
   const normalized = normalizeEndpoint(baseUrl);
-  sessionProfile = { id: SESSION_ID, name: normalized, baseUrl: normalized, apiKey };
+  sessionProfile = {
+    id: SESSION_ID,
+    name: username || normalized,
+    baseUrl: normalized,
+    username,
+    token
+  };
 }
 
 export function clearSessionProfile(): void {
   sessionProfile = null;
 }
 
-export function saveProfile(input: { name: string; baseUrl: string; apiKey: string }): Profile {
+export function saveProfile(input: {
+  name: string;
+  baseUrl: string;
+  username: string;
+  token: string;
+}): Profile {
   const baseUrl = normalizeEndpoint(input.baseUrl);
-  const name = input.name.trim() || baseUrl;
+  const name = input.name.trim() || input.username.trim() || baseUrl;
   const profiles = readProfiles();
   const existing = profiles.find((p) => p.baseUrl === baseUrl);
   if (existing) {
     existing.name = name;
-    existing.apiKey = input.apiKey;
+    existing.username = input.username;
+    existing.token = input.token;
     writeProfiles(profiles);
     return existing;
   }
-  const profile: Profile = { id: crypto.randomUUID(), name, baseUrl, apiKey: input.apiKey };
+  const profile: Profile = {
+    id: crypto.randomUUID(),
+    name,
+    baseUrl,
+    username: input.username,
+    token: input.token
+  };
   profiles.push(profile);
   writeProfiles(profiles);
   return profile;

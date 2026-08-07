@@ -7,10 +7,13 @@ import {
   createLink,
   deleteLink,
   getLinkByCode,
+  listAllLinks,
   listLinks,
+  type ListLinksParams,
   updateLink
 } from '../../services/link-service';
 import { type LinkType, PERMISSIONS } from '../../types';
+import type { AuthContext } from '../auth';
 import { createAuthPlugin, permissionGuard } from '../auth';
 
 const CODE_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -37,6 +40,8 @@ export function serializeLink(
     lastClickedAt: string | null;
     createdAt: string;
     updatedAt: string;
+    createdBy: number | null;
+    creatorUsername?: string | null;
   },
   config: AppConfig
 ) {
@@ -53,8 +58,14 @@ export function serializeLink(
     clickCount: link.clickCount,
     lastClickedAt: link.lastClickedAt,
     createdAt: link.createdAt,
-    updatedAt: link.updatedAt
+    updatedAt: link.updatedAt,
+    createdById: link.createdBy,
+    createdBy: link.creatorUsername ?? null
   };
+}
+
+function canAccess(auth: AuthContext, link: { createdBy: number | null }): boolean {
+  return auth.role === 'admin' || link.createdBy === auth.userId;
 }
 
 function parseCreateBody(body: unknown): {
@@ -93,42 +104,69 @@ function parseCreateBody(body: unknown): {
   };
 }
 
+function parseListQuery(query: Record<string, unknown>): ListLinksParams {
+  const page = Math.max(1, Number.parseInt(String(query.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(query.pageSize ?? '20'), 10) || 20)
+  );
+  const type =
+    query.type === 'alias' || query.type === 'hash' ? (query.type as LinkType) : undefined;
+  const status =
+    query.status === 'active' || query.status === 'retired'
+      ? (query.status as 'active' | 'retired')
+      : undefined;
+  const q = typeof query.q === 'string' && query.q.trim() ? query.q.trim() : undefined;
+  return { page, pageSize, type, status, q };
+}
+
 export function createLinksRouter(db: Db, config: AppConfig) {
   return new Elysia({ prefix: '/links' })
-    .use(createAuthPlugin(db, config))
+    .use(createAuthPlugin(db))
     .guard({ beforeHandle: permissionGuard(PERMISSIONS.LINKS_READ) }, (app) =>
       app
-        .get('/', async ({ query }) => {
-          const page = Math.max(1, Number.parseInt(String(query.page ?? '1'), 10) || 1);
-          const pageSize = Math.min(
-            100,
-            Math.max(1, Number.parseInt(String(query.pageSize ?? '20'), 10) || 20)
-          );
-          const type = query.type === 'alias' || query.type === 'hash' ? query.type : undefined;
-          const status =
-            query.status === 'active' || query.status === 'retired' ? query.status : undefined;
-          const q = typeof query.q === 'string' && query.q.trim() ? query.q.trim() : undefined;
-          const result = await listLinks(db, { page, pageSize, type, status, q });
+        .get('/', async ({ query, auth }) => {
+          const params = parseListQuery(query as Record<string, unknown>);
+          const result = await listLinks(db, params, auth!.userId);
           return {
             ok: true,
             data: {
               items: result.items.map((link) => serializeLink(link, config)),
               total: result.total,
-              page,
-              pageSize
+              page: params.page,
+              pageSize: params.pageSize
             }
           };
         })
-        .get('/:code', async ({ params }) => {
+        .get('/all', async ({ query, auth }) => {
+          if (auth!.role !== 'admin') {
+            throw new ApiError(403, '缺少权限: links:view_all', 'forbidden');
+          }
+          const params = parseListQuery(query as Record<string, unknown>);
+          const createdById = Number.parseInt(String(query.userId ?? ''), 10) || undefined;
+          const result = await listAllLinks(db, params, createdById);
+          return {
+            ok: true,
+            data: {
+              items: result.items.map(({ link, creatorUsername }) =>
+                serializeLink({ ...link, creatorUsername }, config)
+              ),
+              total: result.total,
+              page: params.page,
+              pageSize: params.pageSize
+            }
+          };
+        })
+        .get('/:code', async ({ params, auth }) => {
           const link = await getLinkByCode(db, params.code);
-          if (!link) throw new ApiError(404, '链接不存在', 'not_found');
+          if (!link || !canAccess(auth!, link)) throw new ApiError(404, '链接不存在', 'not_found');
           return { ok: true, data: serializeLink(link, config) };
         })
     )
     .guard({ beforeHandle: permissionGuard(PERMISSIONS.LINKS_STATS) }, (app) =>
-      app.get('/:code/stats', async ({ params }) => {
+      app.get('/:code/stats', async ({ params, auth }) => {
         const link = await getLinkByCode(db, params.code);
-        if (!link) throw new ApiError(404, '链接不存在', 'not_found');
+        if (!link || !canAccess(auth!, link)) throw new ApiError(404, '链接不存在', 'not_found');
         return {
           ok: true,
           data: {
@@ -141,7 +179,7 @@ export function createLinksRouter(db: Db, config: AppConfig) {
       })
     )
     .guard({ beforeHandle: permissionGuard(PERMISSIONS.LINKS_CREATE) }, (app) =>
-      app.post('/', async ({ body, set }) => {
+      app.post('/', async ({ body, auth, set }) => {
         const input = parseCreateBody(body);
         const link = await createLink(
           db,
@@ -150,7 +188,8 @@ export function createLinksRouter(db: Db, config: AppConfig) {
             code: input.code,
             targetUrl: input.targetUrl,
             permanent: input.permanent,
-            expiresAt: input.expiresAt
+            expiresAt: input.expiresAt,
+            createdBy: auth!.userId
           },
           { hashLength: config.hashLength }
         );
@@ -159,7 +198,11 @@ export function createLinksRouter(db: Db, config: AppConfig) {
       })
     )
     .guard({ beforeHandle: permissionGuard(PERMISSIONS.LINKS_UPDATE) }, (app) =>
-      app.patch('/:code', async ({ params, body }) => {
+      app.patch('/:code', async ({ params, body, auth }) => {
+        const existing = await getLinkByCode(db, params.code);
+        if (!existing || !canAccess(auth!, existing)) {
+          throw new ApiError(404, '链接不存在', 'not_found');
+        }
         const b = (body ?? {}) as Record<string, unknown>;
         const patch: { targetUrl?: string; permanent?: boolean; expiresAt?: string | null } = {};
         if (typeof b.targetUrl === 'string') {
@@ -183,7 +226,11 @@ export function createLinksRouter(db: Db, config: AppConfig) {
       })
     )
     .guard({ beforeHandle: permissionGuard(PERMISSIONS.LINKS_DELETE) }, (app) =>
-      app.delete('/:code', async ({ params }) => {
+      app.delete('/:code', async ({ params, auth }) => {
+        const existing = await getLinkByCode(db, params.code);
+        if (!existing || !canAccess(auth!, existing)) {
+          throw new ApiError(404, '链接不存在', 'not_found');
+        }
         const link = await deleteLink(db, params.code);
         return { ok: true, data: serializeLink(link, config) };
       })

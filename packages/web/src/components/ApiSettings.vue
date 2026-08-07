@@ -11,16 +11,8 @@ const emit = defineEmits<{ close: [] }>();
 const auth = useAuthStore();
 const profiles = useProfilesStore();
 
-const newName = ref('');
-const newBaseUrl = ref('');
-const newKey = ref('');
-const error = ref('');
 const switching = ref(false);
-
-function maskKey(value: string): string {
-  if (!value) return '（空）';
-  return value.length <= 6 ? '••••' : `••••${value.slice(-4)}`;
-}
+const error = ref('');
 
 async function switchTo(profile: Profile) {
   if (switching.value) return;
@@ -31,7 +23,7 @@ async function switchTo(profile: Profile) {
     await auth.refresh();
     emit('close');
   } catch {
-    auth.logout();
+    await auth.logout();
     emit('close');
   } finally {
     switching.value = false;
@@ -42,22 +34,6 @@ function remove(profile: Profile) {
   if (!window.confirm(`删除账号配置「${profile.name}」？`)) return;
   profiles.remove(profile.id);
 }
-
-function add() {
-  error.value = '';
-  if (!newBaseUrl.value.trim() || !newKey.value.trim()) {
-    error.value = '请输入 API 地址和 API Key';
-    return;
-  }
-  profiles.save({
-    name: newName.value,
-    baseUrl: newBaseUrl.value,
-    apiKey: newKey.value
-  });
-  newName.value = '';
-  newBaseUrl.value = '';
-  newKey.value = '';
-}
 </script>
 
 <template>
@@ -65,7 +41,9 @@ function add() {
     <div v-if="open" class="backdrop" @click.self="emit('close')">
       <div class="panel">
         <h3>账号配置</h3>
-        <p class="muted">每套配置包含 API 地址与 API Key，点击「切换」即可生效</p>
+        <p class="muted">
+          每套配置包含 API 地址与登录账号，点击「切换」即可生效；新配置请在登录页添加
+        </p>
 
         <ul class="list">
           <li v-for="profile in profiles.profiles" :key="profile.id" class="item">
@@ -74,7 +52,7 @@ function add() {
                 {{ profile.name }}
                 <em v-if="profile.id === profiles.active?.id">当前</em>
               </div>
-              <div class="muted mono">{{ profile.baseUrl }} · {{ maskKey(profile.apiKey) }}</div>
+              <div class="muted mono">{{ profile.baseUrl }} · {{ profile.username }}</div>
             </div>
             <div class="item-actions">
               <button
@@ -90,17 +68,7 @@ function add() {
           <li v-if="profiles.profiles.length === 0" class="muted empty">暂无保存的配置</li>
         </ul>
 
-        <div class="add">
-          <div class="add-row">
-            <input v-model="newName" placeholder="名称（可选）" />
-            <input v-model="newBaseUrl" placeholder="API 地址，如 http://localhost:3000/api" />
-          </div>
-          <div class="add-row">
-            <input v-model="newKey" type="password" placeholder="API Key" />
-            <button type="button" class="primary" @click="add">保存配置</button>
-          </div>
-          <p v-if="error" class="error">{{ error }}</p>
-        </div>
+        <p v-if="error" class="error">{{ error }}</p>
 
         <div class="foot">
           <button type="button" @click="emit('close')">关闭</button>
@@ -208,24 +176,6 @@ function add() {
 .empty {
   text-align: center;
   padding: 8px 0;
-}
-
-.add {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-
-.add-row {
-  display: flex;
-  gap: 8px;
-}
-
-.add-row input {
-  flex: 1;
-  min-width: 0;
 }
 
 .foot {

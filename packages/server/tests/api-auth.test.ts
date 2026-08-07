@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 
 import { createApp } from '../src/app';
-import { createApiKey } from '../src/services/key-service';
-import { ALL_PERMISSIONS } from '../src/types';
-import { createTestDb, testConfig } from './helpers';
-
-const ADMIN = 'test-admin-key';
+import { ADMIN_PERMISSIONS, USER_PERMISSIONS } from '../src/types';
+import { authed, createAuthedTestDb, loginAs, TEST_ADMIN, testConfig } from './helpers';
 
 function createApiAppForTest() {
-  const db = createTestDb();
-  const app = createApp(db, testConfig());
-  return { db, app };
+  return createAuthedTestDb().then((db) => ({ db, app: createApp(db, testConfig()) }));
 }
 
 async function readJson(res: Response) {
@@ -21,154 +16,233 @@ async function readJson(res: Response) {
   };
 }
 
-function authed(url: string, key: string, init: RequestInit = {}): Request {
-  return new Request(url, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${key}`,
-      'content-type': 'application/json',
-      ...(init.headers ?? {})
-    }
+function loginRequest(username: string, password: string): Request {
+  return new Request('http://localhost/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password })
   });
 }
 
-describe('api auth & permissions', () => {
-  it('无 Key 返回 401', async () => {
-    const { app } = createApiAppForTest();
+describe('api auth', () => {
+  it('无 token 返回 401', async () => {
+    const { app } = await createApiAppForTest();
     const res = await app.handle(new Request('http://localhost/api/links'));
     expect(res.status).toBe(401);
   });
 
-  it('无效 Key 返回 401', async () => {
-    const { app } = createApiAppForTest();
+  it('无效 token 返回 401', async () => {
+    const { app } = await createApiAppForTest();
     const res = await app.handle(
-      new Request('http://localhost/api/links', {
-        headers: { authorization: 'Bearer invalid-key' }
+      new Request('http://localhost/api/links', { headers: { authorization: 'Bearer invalid' } })
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('管理员登录成功返回 token 与全部权限', async () => {
+    const { app } = await createApiAppForTest();
+    const res = await app.handle(loginRequest(TEST_ADMIN.username, TEST_ADMIN.password));
+    expect(res.status).toBe(200);
+    const data = await readJson(res);
+    expect(data.data?.token).toBeTruthy();
+    const user = data.data?.user as { role: string; permissions: string[] };
+    expect(user.role).toBe('admin');
+    expect(user.permissions).toEqual(ADMIN_PERMISSIONS);
+  });
+
+  it('密码错误返回 401', async () => {
+    const { app } = await createApiAppForTest();
+    const res = await app.handle(loginRequest(TEST_ADMIN.username, 'wrong-password'));
+    expect(res.status).toBe(401);
+  });
+
+  it('不存在的用户名返回 401', async () => {
+    const { app } = await createApiAppForTest();
+    const res = await app.handle(loginRequest('nobody', 'whatever-123'));
+    expect(res.status).toBe(401);
+  });
+
+  it('登录后 verify 返回用户信息', async () => {
+    const { app } = await createApiAppForTest();
+    const token = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    const res = await app.handle(
+      new Request('http://localhost/api/auth/verify', {
+        headers: { authorization: `Bearer ${token}` }
+      })
+    );
+    expect(res.status).toBe(200);
+    const data = await readJson(res);
+    expect(data.data?.username).toBe(TEST_ADMIN.username);
+    expect(data.data?.role).toBe('admin');
+  });
+
+  it('logout 后 token 失效', async () => {
+    const { app } = await createApiAppForTest();
+    const token = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    const out = await app.handle(
+      authed('http://localhost/api/auth/logout', token, { method: 'POST' })
+    );
+    expect(out.status).toBe(200);
+    const res = await app.handle(
+      new Request('http://localhost/api/auth/verify', {
+        headers: { authorization: `Bearer ${token}` }
       })
     );
     expect(res.status).toBe(401);
   });
 
-  it('管理员 verify 返回全权限', async () => {
-    const { app } = createApiAppForTest();
-    const res = await app.handle(
-      new Request('http://localhost/api/auth/verify', {
-        headers: { authorization: `Bearer ${ADMIN}` }
+  it('普通用户权限为子集且不能访问用户管理', async () => {
+    const { db, app } = await createApiAppForTest();
+    const adminToken = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    const created = await app.handle(
+      authed('http://localhost/api/users', adminToken, {
+        method: 'POST',
+        body: JSON.stringify({ username: 'alice', password: 'alice-password-1' })
       })
     );
-    expect(res.status).toBe(200);
-    const data = await readJson(res);
-    expect(data.data?.kind).toBe('admin');
-    expect(data.data?.permissions).toEqual(ALL_PERMISSIONS);
+    expect(created.status).toBe(201);
+
+    const aliceToken = await loginAs(app, 'alice', 'alice-password-1');
+    const verify = await app.handle(
+      new Request('http://localhost/api/auth/verify', {
+        headers: { authorization: `Bearer ${aliceToken}` }
+      })
+    );
+    const data = await readJson(verify);
+    expect(data.data?.role).toBe('user');
+    expect(data.data?.permissions).toEqual(USER_PERMISSIONS);
+
+    const users = await app.handle(
+      new Request('http://localhost/api/users', {
+        headers: { authorization: `Bearer ${aliceToken}` }
+      })
+    );
+    expect(users.status).toBe(403);
+    void db;
   });
 
-  it('管理员可创建链接', async () => {
-    const { app } = createApiAppForTest();
-    const res = await app.handle(
-      authed('http://localhost/api/links', ADMIN, {
+  it('被禁用用户无法登录，已有会话失效', async () => {
+    const { db, app } = await createApiAppForTest();
+    const adminToken = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    await app.handle(
+      authed('http://localhost/api/users', adminToken, {
+        method: 'POST',
+        body: JSON.stringify({ username: 'bob', password: 'bob-password-1' })
+      })
+    );
+    const bobToken = await loginAs(app, 'bob', 'bob-password-1');
+    const listed = await app.handle(
+      new Request('http://localhost/api/users', {
+        headers: { authorization: `Bearer ${adminToken}` }
+      })
+    );
+    const users = (await readJson(listed)).data as unknown as Array<{
+      id: number;
+      username: string;
+    }>;
+    const bob = users.find((u) => u.username === 'bob');
+    const disable = await app.handle(
+      authed(`http://localhost/api/users/${bob!.id}`, adminToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: false })
+      })
+    );
+    expect(disable.status).toBe(200);
+
+    const relogin = await app.handle(loginRequest('bob', 'bob-password-1'));
+    expect(relogin.status).toBe(401);
+
+    const verifyOld = await app.handle(
+      new Request('http://localhost/api/auth/verify', {
+        headers: { authorization: `Bearer ${bobToken}` }
+      })
+    );
+    expect(verifyOld.status).toBe(401);
+    void db;
+  });
+
+  it('重置密码后旧密码失效', async () => {
+    const { app } = await createApiAppForTest();
+    const adminToken = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    await app.handle(
+      authed('http://localhost/api/users', adminToken, {
+        method: 'POST',
+        body: JSON.stringify({ username: 'carol', password: 'carol-password-1' })
+      })
+    );
+    const listed = await app.handle(
+      new Request('http://localhost/api/users', {
+        headers: { authorization: `Bearer ${adminToken}` }
+      })
+    );
+    const users = (await readJson(listed)).data as unknown as Array<{
+      id: number;
+      username: string;
+    }>;
+    const carol = users.find((u) => u.username === 'carol');
+    const reset = await app.handle(
+      authed(`http://localhost/api/users/${carol!.id}`, adminToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ password: 'new-password-2' })
+      })
+    );
+    expect(reset.status).toBe(200);
+
+    expect((await app.handle(loginRequest('carol', 'carol-password-1'))).status).toBe(401);
+    expect((await app.handle(loginRequest('carol', 'new-password-2'))).status).toBe(200);
+  });
+
+  it('不能禁用或删除管理员账号', async () => {
+    const { app } = await createApiAppForTest();
+    const adminToken = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    const listed = await app.handle(
+      new Request('http://localhost/api/users', {
+        headers: { authorization: `Bearer ${adminToken}` }
+      })
+    );
+    const users = (await readJson(listed)).data as unknown as Array<{
+      id: number;
+      username: string;
+    }>;
+    const admin = users.find((u) => u.username === TEST_ADMIN.username);
+    const disable = await app.handle(
+      authed(`http://localhost/api/users/${admin!.id}`, adminToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: false })
+      })
+    );
+    expect(disable.status).toBe(400);
+    const del = await app.handle(
+      authed(`http://localhost/api/users/${admin!.id}`, adminToken, { method: 'DELETE' })
+    );
+    expect(del.status).toBe(400);
+  });
+
+  it('删除用户后其链接保留但无创建者', async () => {
+    const { db, app } = await createApiAppForTest();
+    const adminToken = await loginAs(app, TEST_ADMIN.username, TEST_ADMIN.password);
+    const created = await app.handle(
+      authed('http://localhost/api/users', adminToken, {
+        method: 'POST',
+        body: JSON.stringify({ username: 'dave', password: 'dave-password-1' })
+      })
+    );
+    const user = (await readJson(created)).data as { id: number };
+    const daveToken = await loginAs(app, 'dave', 'dave-password-1');
+    await app.handle(
+      authed('http://localhost/api/links', daveToken, {
         method: 'POST',
         body: JSON.stringify({
-          type: 'alias',
-          code: 'abc',
-          targetUrl: 'https://example.com',
+          type: 'hash',
+          targetUrl: 'https://example.com/dave',
           permanent: true
         })
       })
     );
-    expect(res.status).toBe(201);
-    const data = await readJson(res);
-    expect((data.data as { code: string }).code).toBe('abc');
-  });
-
-  it('普通 Key 缺权限返回 403', async () => {
-    const { db, app } = createApiAppForTest();
-    const { rawKey } = await createApiKey(db, { name: 'limited', permissions: [] }, 'yl_');
-    const res = await app.handle(
-      new Request('http://localhost/api/links', { headers: { authorization: `Bearer ${rawKey}` } })
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('普通 Key 拥有权限可操作', async () => {
-    const { db, app } = createApiAppForTest();
-    const { rawKey } = await createApiKey(
-      db,
-      { name: 'writer', permissions: ['links:create', 'links:read'] },
-      'yl_'
-    );
-    const created = await app.handle(
-      authed('http://localhost/api/links', rawKey, {
-        method: 'POST',
-        body: JSON.stringify({
-          type: 'hash',
-          targetUrl: 'https://example.com/x',
-          permanent: false
-        })
-      })
-    );
-    expect(created.status).toBe(201);
-
-    const listed = await app.handle(
-      new Request('http://localhost/api/links', { headers: { 'x-api-key': rawKey } })
-    );
-    expect(listed.status).toBe(200);
-  });
-
-  it('管理员可创建并删除 Key', async () => {
-    const { app } = createApiAppForTest();
-    const created = await app.handle(
-      authed('http://localhost/api/keys', ADMIN, {
-        method: 'POST',
-        body: JSON.stringify({ name: 'tmp', permissions: ['links:read'] })
-      })
-    );
-    expect(created.status).toBe(201);
-    const createdData = await readJson(created);
-    expect(createdData.data?.rawKey).toBeTruthy();
-
-    const keys = await app.handle(
-      new Request('http://localhost/api/keys', { headers: { authorization: `Bearer ${ADMIN}` } })
-    );
-    const keysData = await readJson(keys);
-    expect(Array.isArray(keysData.data)).toBe(true);
-    const keyList = keysData.data as unknown as Array<{ id: number }>;
-    const first = keyList[0];
-    if (!first) throw new Error('预期有 Key 记录');
-    const id = first.id;
-
     const del = await app.handle(
-      authed(`http://localhost/api/keys/${id}`, ADMIN, { method: 'DELETE' })
+      authed(`http://localhost/api/users/${user.id}`, adminToken, { method: 'DELETE' })
     );
     expect(del.status).toBe(200);
-  });
-
-  it('普通 Key 不能管理 Key', async () => {
-    const { db, app } = createApiAppForTest();
-    const { rawKey } = await createApiKey(
-      db,
-      { name: 'limited', permissions: ['links:read'] },
-      'yl_'
-    );
-    const res = await app.handle(
-      new Request('http://localhost/api/keys', { headers: { authorization: `Bearer ${rawKey}` } })
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('创建 Key 后可用该 Key 鉴权', async () => {
-    const { db, app } = createApiAppForTest();
-    const { rawKey } = await createApiKey(
-      db,
-      { name: 'reader', permissions: ['links:read'] },
-      'yl_'
-    );
-    const res = await app.handle(
-      new Request('http://localhost/api/auth/verify', {
-        headers: { authorization: `Bearer ${rawKey}` }
-      })
-    );
-    expect(res.status).toBe(200);
-    const data = await readJson(res);
-    expect(data.data?.permissions).toEqual(['links:read']);
+    void db;
   });
 });

@@ -28,7 +28,7 @@ export const useProfilesStore = defineStore('profiles', {
       setActiveProfile(id);
       this.refresh();
     },
-    save(input: { name: string; baseUrl: string; apiKey: string }): Profile {
+    save(input: { name: string; baseUrl: string; username: string; token: string }): Profile {
       const profile = saveProfile(input);
       this.refresh();
       return profile;

@@ -1,17 +1,24 @@
 import { api } from './client';
 import type {
-  ApiKeyInfo,
-  AuthInfo,
-  CreatedKey,
   LinkItem,
   LinkStats,
   ListLinksResult,
-  Permission,
-  SystemInfo
+  LoginResult,
+  SystemInfo,
+  UserInfo,
+  UserRow
 } from './types';
 
-export function verify(): Promise<AuthInfo> {
-  return api.get<AuthInfo>('/auth/verify');
+export function login(input: { username: string; password: string }): Promise<LoginResult> {
+  return api.post<LoginResult>('/auth/login', input);
+}
+
+export function logout(): Promise<{ loggedOut: boolean }> {
+  return api.post<{ loggedOut: boolean }>('/auth/logout', {});
+}
+
+export function verify(): Promise<UserInfo> {
+  return api.get<UserInfo>('/auth/verify');
 }
 
 export function getSystemInfo(): Promise<SystemInfo> {
@@ -26,14 +33,27 @@ export interface ListLinksParams {
   q?: string;
 }
 
-export function listLinks(params: ListLinksParams): Promise<ListLinksResult> {
+export interface ListAllLinksParams extends ListLinksParams {
+  userId?: number;
+}
+
+function listQuery(params: ListLinksParams | ListAllLinksParams): string {
   const qs = new URLSearchParams();
   qs.set('page', String(params.page));
   qs.set('pageSize', String(params.pageSize));
   if (params.type) qs.set('type', params.type);
   if (params.status) qs.set('status', params.status);
   if (params.q) qs.set('q', params.q);
-  return api.get<ListLinksResult>(`/links?${qs.toString()}`);
+  if ('userId' in params && params.userId !== undefined) qs.set('userId', String(params.userId));
+  return qs.toString();
+}
+
+export function listLinks(params: ListLinksParams): Promise<ListLinksResult> {
+  return api.get<ListLinksResult>(`/links?${listQuery(params)}`);
+}
+
+export function listAllLinks(params: ListAllLinksParams): Promise<ListLinksResult> {
+  return api.get<ListLinksResult>(`/links/all?${listQuery(params)}`);
 }
 
 export function getLink(code: string): Promise<LinkItem> {
@@ -67,21 +87,21 @@ export function getLinkStats(code: string): Promise<LinkStats> {
   return api.get<LinkStats>(`/links/${encodeURIComponent(code)}/stats`);
 }
 
-export function listKeys(): Promise<ApiKeyInfo[]> {
-  return api.get<ApiKeyInfo[]>('/keys');
+export function listUsers(): Promise<UserRow[]> {
+  return api.get<UserRow[]>('/users');
 }
 
-export function createKey(body: { name: string; permissions: Permission[] }): Promise<CreatedKey> {
-  return api.post<CreatedKey>('/keys', body);
+export function createUser(body: { username: string; password: string }): Promise<UserRow> {
+  return api.post<UserRow>('/users', body);
 }
 
-export function updateKey(
+export function updateUser(
   id: number,
-  patch: { name?: string; permissions?: Permission[]; enabled?: boolean }
-): Promise<ApiKeyInfo> {
-  return api.patch<ApiKeyInfo>(`/keys/${id}`, patch);
+  patch: { enabled?: boolean; password?: string }
+): Promise<UserRow> {
+  return api.patch<UserRow>(`/users/${id}`, patch);
 }
 
-export function deleteKey(id: number): Promise<{ deleted: boolean }> {
-  return api.delete<{ deleted: boolean }>(`/keys/${id}`);
+export function deleteUser(id: number): Promise<{ deleted: boolean }> {
+  return api.delete<{ deleted: boolean }>(`/users/${id}`);
 }

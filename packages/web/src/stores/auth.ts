@@ -1,30 +1,30 @@
 import { defineStore } from 'pinia';
 
-import { verify } from '@/api';
+import { login as apiLogin, logout as apiLogout, verify } from '@/api';
 import {
   clearSessionProfile,
-  getApiKey,
+  getToken,
   saveProfile,
   setActiveProfile,
   setSessionProfile
 } from '@/api/credentials';
-import type { AuthInfo, Permission } from '@/api/types';
+import type { Permission, UserInfo } from '@/api/types';
 
 interface AuthState {
-  key: string | null;
-  info: AuthInfo | null;
+  token: string | null;
+  info: UserInfo | null;
   loading: boolean;
 }
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    key: getApiKey(),
+    token: getToken(),
     info: null,
     loading: false
   }),
   getters: {
     authenticated: (state): boolean => state.info !== null,
-    isAdmin: (state): boolean => state.info?.kind === 'admin',
+    isAdmin: (state): boolean => state.info?.role === 'admin',
     permissions: (state): Permission[] => state.info?.permissions ?? []
   },
   actions: {
@@ -33,25 +33,29 @@ export const useAuthStore = defineStore('auth', {
     },
     async login(input: {
       baseUrl: string;
-      key: string;
+      username: string;
+      password: string;
       name: string;
       remember: boolean;
     }): Promise<void> {
+      setSessionProfile(input.baseUrl, '', '');
+      const result = await apiLogin({ username: input.username, password: input.password });
       if (input.remember) {
         const profile = saveProfile({
           name: input.name,
           baseUrl: input.baseUrl,
-          apiKey: input.key
+          username: result.user.username,
+          token: result.token
         });
         setActiveProfile(profile.id);
       } else {
-        setSessionProfile(input.baseUrl, input.key);
+        setSessionProfile(input.baseUrl, result.user.username, result.token);
       }
-      this.key = getApiKey();
-      await this.refresh();
+      this.token = getToken();
+      this.info = result.user;
     },
     async refresh(): Promise<void> {
-      if (!this.key) {
+      if (!this.token) {
         this.info = null;
         return;
       }
@@ -60,14 +64,19 @@ export const useAuthStore = defineStore('auth', {
         this.info = await verify();
       } catch {
         this.info = null;
-        throw new Error('API Key 无效或已失效');
+        throw new Error('登录会话已失效');
       } finally {
         this.loading = false;
       }
     },
-    logout(): void {
+    async logout(): Promise<void> {
+      try {
+        await apiLogout();
+      } catch {
+        // 忽略：即使会话已失效也清除本地状态
+      }
       clearSessionProfile();
-      this.key = null;
+      this.token = null;
       this.info = null;
     }
   }

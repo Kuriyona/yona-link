@@ -12,20 +12,16 @@ const router = useRouter();
 
 const name = ref('');
 const baseUrl = ref(profiles.active?.baseUrl ?? '');
-const key = ref(profiles.active?.apiKey ?? '');
+const username = ref(profiles.active?.username ?? '');
+const password = ref('');
 const remember = ref(true);
 const error = ref('');
 const loading = ref(false);
 
-function maskKey(value: string): string {
-  if (!value) return '（空）';
-  return value.length <= 6 ? '••••' : `••••${value.slice(-4)}`;
-}
-
 function loadActive() {
   name.value = profiles.active?.name ?? '';
   baseUrl.value = profiles.active?.baseUrl ?? '';
-  key.value = profiles.active?.apiKey ?? '';
+  username.value = profiles.active?.username ?? '';
 }
 
 function useProfile(profile: Profile) {
@@ -47,15 +43,20 @@ async function submit() {
     error.value = '请输入 API 地址';
     return;
   }
-  if (!key.value.trim()) {
-    error.value = '请输入 API Key';
+  if (!username.value.trim()) {
+    error.value = '请输入用户名';
+    return;
+  }
+  if (!password.value) {
+    error.value = '请输入密码';
     return;
   }
   loading.value = true;
   try {
     await auth.login({
       baseUrl: baseUrl.value,
-      key: key.value.trim(),
+      username: username.value.trim(),
+      password: password.value,
       name: name.value,
       remember: remember.value
     });
@@ -76,7 +77,7 @@ onMounted(() => {
   <div class="login-wrap">
     <div class="login-card">
       <h1>Yona-Link</h1>
-      <p class="muted">可保存多套 API 地址 + Key 账号配置</p>
+      <p class="muted">用户账号登录，可保存多套「API 地址 + 账号」配置</p>
 
       <div v-if="profiles.profiles.length > 0" class="profiles">
         <label>已保存的账号配置</label>
@@ -87,7 +88,7 @@ onMounted(() => {
                 {{ profile.name }}
                 <em v-if="profile.id === profiles.active?.id">当前</em>
               </div>
-              <div class="muted mono">{{ profile.baseUrl }} · {{ maskKey(profile.apiKey) }}</div>
+              <div class="muted mono">{{ profile.baseUrl }} · {{ profile.username }}</div>
             </div>
             <div class="item-actions">
               <button type="button" class="primary" @click="useProfile(profile)">使用</button>
@@ -118,8 +119,17 @@ onMounted(() => {
         </div>
 
         <div class="field">
-          <label>API Key</label>
-          <input v-model="key" type="password" autocomplete="off" placeholder="API Key" />
+          <label>用户名</label>
+          <input v-model="username" autocomplete="username" placeholder="用户名" />
+        </div>
+
+        <div class="field">
+          <label>密码</label>
+          <input
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="密码" />
         </div>
 
         <label class="checkbox">
@@ -130,7 +140,7 @@ onMounted(() => {
         <p v-if="error" class="error">{{ error }}</p>
 
         <button type="submit" class="primary" :disabled="loading">
-          {{ loading ? '验证中...' : '登录' }}
+          {{ loading ? '登录中...' : '登录' }}
         </button>
       </form>
     </div>

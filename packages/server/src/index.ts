@@ -1,9 +1,11 @@
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { ensureAdminUser } from './services/user-service';
 
 const config = loadConfig();
 const db = createDb(config.databasePath);
+await ensureAdminUser(db, config);
 
 createApp(db, config).listen(config.port);
 

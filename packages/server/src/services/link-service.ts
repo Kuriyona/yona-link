@@ -1,6 +1,6 @@
 import { and, desc, eq, like, lt, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { links } from '../db/schema';
+import { links, users } from '../db/schema';
 import { ApiError } from '../errors';
 import { isReservedPath, type LinkType } from '../types';
 import { generateHash } from './hash-service';
@@ -13,6 +13,7 @@ export interface CreateLinkInput {
   targetUrl: string;
   permanent: boolean;
   expiresAt?: string | null;
+  createdBy?: number | null;
 }
 
 export interface UpdateLinkInput {
@@ -83,7 +84,8 @@ export async function createLink(
       expiresAt: input.permanent ? null : (input.expiresAt ?? null),
       clickCount: 0,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      createdBy: input.createdBy ?? null
     })
     .returning()
     .get();
@@ -94,7 +96,11 @@ export async function getLinkByCode(db: Db, code: string) {
   return db.select().from(links).where(eq(links.code, code)).get();
 }
 
-export async function listLinks(db: Db, params: ListLinksParams) {
+export async function listLinks(
+  db: Db,
+  params: ListLinksParams,
+  ownerId?: number
+): Promise<{ items: (typeof links.$inferSelect)[]; total: number }> {
   const conditions = [];
   if (params.type) conditions.push(eq(links.type, params.type));
   if (params.status) conditions.push(eq(links.status, params.status));
@@ -102,6 +108,7 @@ export async function listLinks(db: Db, params: ListLinksParams) {
     const pattern = `%${params.q}%`;
     conditions.push(or(like(links.code, pattern), like(links.targetUrl, pattern)));
   }
+  if (ownerId !== undefined) conditions.push(eq(links.createdBy, ownerId));
 
   const where = conditions.length ? and(...conditions) : undefined;
   const totalRow = await db
@@ -118,6 +125,41 @@ export async function listLinks(db: Db, params: ListLinksParams) {
     .offset((params.page - 1) * params.pageSize);
 
   return { items, total: totalRow?.n ?? 0 };
+}
+
+export async function listAllLinks(
+  db: Db,
+  params: ListLinksParams,
+  createdById?: number
+): Promise<{
+  items: { link: typeof links.$inferSelect; creatorUsername: string | null }[];
+  total: number;
+}> {
+  const conditions = [];
+  if (params.type) conditions.push(eq(links.type, params.type));
+  if (params.status) conditions.push(eq(links.status, params.status));
+  if (params.q) {
+    const pattern = `%${params.q}%`;
+    conditions.push(or(like(links.code, pattern), like(links.targetUrl, pattern)));
+  }
+  if (createdById !== undefined) conditions.push(eq(links.createdBy, createdById));
+
+  const where = conditions.length ? and(...conditions) : undefined;
+  const totalRow = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(links)
+    .where(where)
+    .get();
+  const rows = await db
+    .select({ link: links, creatorUsername: users.username })
+    .from(links)
+    .leftJoin(users, eq(links.createdBy, users.id))
+    .where(where)
+    .orderBy(desc(links.createdAt))
+    .limit(params.pageSize)
+    .offset((params.page - 1) * params.pageSize);
+
+  return { items: rows, total: totalRow?.n ?? 0 };
 }
 
 export async function updateLink(

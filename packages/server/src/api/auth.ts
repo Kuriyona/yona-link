@@ -1,63 +1,37 @@
-import { timingSafeEqual } from 'node:crypto';
-
-import { eq } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 
-import type { AppConfig } from '../config';
 import type { Db } from '../db/client';
-import { apiKeys } from '../db/schema';
-import { hashApiKey, parsePermissions } from '../services/key-service';
-import { ALL_PERMISSIONS, type Permission } from '../types';
+import { resolveSession } from '../services/session-service';
+import { permissionsForRole, type Permission } from '../types';
 
 export interface AuthContext {
-  kind: 'admin' | 'key';
-  keyId?: number;
-  name: string;
+  userId: number;
+  username: string;
+  role: 'admin' | 'user';
   permissions: Permission[];
 }
 
-function constantTimeEquals(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
-
-export function extractApiKey(headers: Record<string, string | undefined>): string | null {
+export function extractToken(headers: Record<string, string | undefined>): string | null {
   const authz = headers.authorization ?? headers.Authorization;
   if (authz?.toLowerCase().startsWith('bearer ')) return authz.slice(7).trim();
   return headers['x-api-key'] ?? headers['X-Api-Key'] ?? null;
 }
 
-export async function authenticateKey(
-  db: Db,
-  adminKey: string,
-  raw: string
-): Promise<AuthContext | null> {
-  if (constantTimeEquals(raw, adminKey)) {
-    return { kind: 'admin', name: 'admin', permissions: [...ALL_PERMISSIONS] };
-  }
-  const key = await db
-    .select()
-    .from(apiKeys)
-    .where(eq(apiKeys.keyHash, hashApiKey(raw)))
-    .get();
-  if (!key?.enabled) return null;
-  await db
-    .update(apiKeys)
-    .set({ lastUsedAt: new Date().toISOString() })
-    .where(eq(apiKeys.id, key.id));
+export async function authenticateSession(db: Db, raw: string): Promise<AuthContext | null> {
+  const session = await resolveSession(db, raw);
+  if (!session) return null;
   return {
-    kind: 'key',
-    keyId: key.id,
-    name: key.name,
-    permissions: parsePermissions(key.permissions)
+    userId: session.userId,
+    username: session.username,
+    role: session.role,
+    permissions: permissionsForRole(session.role)
   };
 }
 
-export function createAuthPlugin(db: Db, config: AppConfig) {
+export function createAuthPlugin(db: Db) {
   return new Elysia({ name: 'auth' }).derive({ as: 'global' }, async ({ headers }) => ({
-    auth: (await authenticateKey(db, config.adminKey, extractApiKey(headers) ?? '')) || null
+    auth:
+      (await authenticateSession(db, extractToken(headers as Record<string, string>) ?? '')) || null
   }));
 }
 
@@ -66,7 +40,7 @@ export function permissionGuard(perms: Permission | Permission[]) {
   return ({ auth, set }: { auth: AuthContext | null; set: { status?: number | string } }) => {
     if (!auth) {
       set.status = 401;
-      return { ok: false, error: { code: 'unauthorized', message: '缺少或无效的 API Key' } };
+      return { ok: false, error: { code: 'unauthorized', message: '缺少或无效的登录会话' } };
     }
     const granted = new Set(auth.permissions);
     const missing = list.filter((p) => !granted.has(p));

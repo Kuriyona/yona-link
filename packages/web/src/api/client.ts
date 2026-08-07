@@ -1,4 +1,4 @@
-import { getApiBaseUrl, getApiKey } from './credentials';
+import { getApiBaseUrl, getToken } from './credentials';
 
 export class ApiError extends Error {
   constructor(
@@ -24,8 +24,8 @@ class ApiClient {
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const headers = new Headers(init.headers);
     if (init.body) headers.set('content-type', 'application/json');
-    const key = getApiKey();
-    if (key) headers.set('authorization', `Bearer ${key}`);
+    const token = getToken();
+    if (token) headers.set('authorization', `Bearer ${token}`);
 
     const res = await fetch(`${this.baseUrl()}${path}`, { ...init, headers });
     let payload: ApiResponse<T> | null = null;
