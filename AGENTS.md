@@ -45,3 +45,4 @@ Yona-Link: self-hosted short-link service. pnpm monorepo with two packages: `pac
 
 - Formatting via oxfmt: single quotes, no trailing commas, `bracketSameLine: true` (see `.oxfmtrc.json`; ignores `**/drizzle`, `**/dist`). Run `pnpm format` after edits.
 - User-facing strings (API errors, UI text, env comments, docs) are in Chinese — keep it consistent.
+- `README.md` is **user-facing only** (usage + simple API docs) — do not put implementation details there. Implementation notes and dev conventions live in this file (`AGENTS.md`).

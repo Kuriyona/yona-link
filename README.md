@@ -1,6 +1,6 @@
 # Yona-Link
 
-自托管的短链接服务，包含核心服务器与 Web 管理页面，前后端完全独立部署。
+自托管的短链接服务，包含核心服务器与 Web 管理页面，前后端可独立部署。
 
 ## 功能特性
 
@@ -8,50 +8,11 @@
   - `[domain]` → 默认跳转目标
   - `[domain]/@[name]` → 自定义名称跳转
   - `[domain]/[hash]` → 随机 hash 跳转（默认长度 6）
-  - `[domain]/api/*` → 管理 API（保留路径，不可被短链占用）
 - 短链支持**长期**与**临时**（可设置过期时间）
 - 删除或失效后进入**保留期**（默认 7 天，期内不可访问、code 不可复用，超期自动清理）
-- REST API 作为唯一管理方式，基于**用户账号 + 会话 Token** 鉴权
-  - 管理员账号（环境变量 `ADMIN_USERNAME`/`ADMIN_PASSWORD`）拥有全部权限
-  - 管理员可创建/管理其他用户账号（创建、启停、删除、重置密码）
-  - 每条短链记录**创建者**；普通用户只能查看/管理自己创建的短链，管理员可查看全部用户短链
-- Web 管理页面：Vue 3 静态 SFC，最小化自写 CSS，无 UI 框架依赖
-  - **多账号配置**：可保存多套「API 地址 + 账号」并一键切换（浏览器 localStorage）
-
-## 技术栈
-
-- 包管理器：PNPM（单仓库 workspace）
-- 运行时：Bun
-- 后端：Elysia + Drizzle ORM（SQLite）
-- 前端：Vue 3 + Vite + vue-router + Pinia
-- 代码格式化：oxfmt（`.oxfmtrc.json`），无 linter
-
-## 目录结构
-
-```
-yona-link/
-├── .oxfmtrc.json              # oxfmt 格式化配置
-├── package.json               # workspace 根脚本编排
-├── pnpm-workspace.yaml        # packages/*
-├── packages/
-│   ├── server/                # 核心服务器（Bun + Elysia + SQLite）
-│   │   ├── src/
-│   │   │   ├── index.ts       # 入口：加载配置/DB，监听单端口（迁移单独执行）
-│   │   │   ├── app.ts         # 合并 API + 短链跳转，统一 JSON 404
-│   │   │   ├── config.ts      # 环境变量配置
-│   │   │   ├── db/            # Drizzle schema、bun:sqlite 客户端、迁移
-│   │   │   ├── services/      # 链接/用户/会话业务逻辑、hash 生成
-│   │   │   ├── api/           # /api 前缀的管理 API（auth、links、users、cors）
-│   │   │   └── link/          # 短链跳转路由
-│   │   ├── drizzle/           # 生成的 SQL 迁移文件
-│   │   └── tests/             # bun test（内存 SQLite）
-│   └── web/                   # Web 管理页面（Vue 3 静态 SFC）
-│       └── src/
-│           ├── api/           # HTTP 客户端与多账号凭据管理
-│           ├── stores/        # Pinia（auth / profiles）
-│           ├── views/         # 登录、短链接列表、全部链接、编辑、统计、用户管理
-│           └── components/    # 通用弹窗（API 设置等）
-```
+- **用户账号鉴权**：管理员账号由环境变量配置，可创建/管理其他用户（创建、启停、删除、重置密码）
+- 每条短链记录**创建者**：普通用户只能查看/管理自己创建的短链，管理员可查看全部用户短链
+- Web 管理页面：支持保存多套「API 地址 + 账号」配置并一键切换（浏览器 localStorage）
 
 ## 快速开始
 
@@ -70,11 +31,9 @@ pnpm --filter @yona-link/server db:generate
 pnpm --filter @yona-link/server db:migrate
 ```
 
-> 服务器启动**不会**自动执行迁移，改过 schema 后需手动执行上面的迁移命令（生产部署见「服务器单文件打包与部署」）。`db:push` 可用于开发期直接同步 schema（不生成迁移文件）。
+> 服务器启动**不会**自动执行迁移，修改 schema 后需手动执行上述命令；生产部署见「服务器单文件打包与部署」。
 
 ### 配置
-
-复制并编辑环境变量文件：
 
 ```bash
 cp packages/server/.env.example packages/server/.env
@@ -178,7 +137,21 @@ bun yona-link.js
 - **用户管理**（仅管理员）：创建用户（设置初始密码）、启停、重置密码、删除
 - 侧边栏显示当前用户名与角色，点击可打开账号配置弹窗
 
-## 使用 API 创建第一个短链
+### 部署静态站点
+
+```bash
+# 指定后端 API 地址后构建（否则默认 /api，需反向代理同源）
+VITE_API_BASE_URL=https://api.example.com/api pnpm --filter @yona-link/web build
+```
+
+构建产物位于 `packages/web/dist/`，可使用任意静态托管服务部署。
+
+## API 文档
+
+鉴权：登录后请求头携带 `Authorization: Bearer <token>`。
+统一响应：`{ "ok": true, "data": ... }` / `{ "ok": false, "error": { "code", "message" } }`。
+
+### 登录与创建第一个短链
 
 ```bash
 # 1. 登录获取会话 Token
@@ -202,10 +175,7 @@ curl -X POST http://localhost:3000/api/links \
 > 注意：`/api` 为保留路径，短链 code 不可使用 `api`/`health`（大小写不敏感）。
 > 配置了 `PUBLIC_LINK_DOMAIN` 后，创建接口会返回完整的 `shortUrl`。
 
-## API 概览
-
-鉴权：登录后请求头携带 `Authorization: Bearer <token>`。
-统一响应：`{ "ok": true, "data": ... }` / `{ "ok": false, "error": { "code", "message" } }`。
+### 接口列表
 
 | 方法/路径                    | 权限             | 说明                                     |
 | ---------------------------- | ---------------- | ---------------------------------------- |
@@ -226,24 +196,6 @@ curl -X POST http://localhost:3000/api/links \
 | `DELETE /api/users/:id`      | `users:manage`   | 删除用户                                 |
 
 权限：普通用户拥有 `links:read`/`links:create`/`links:update`/`links:delete`/`links:stats`；管理员额外拥有 `links:view_all` 与 `users:manage`。
-
-## Web 管理页面部署
-
-```bash
-# 指定后端 API 地址后构建（否则默认 /api，需反向代理同源）
-VITE_API_BASE_URL=https://api.example.com/api pnpm --filter @yona-link/web build
-```
-
-构建产物位于 `packages/web/dist/`，可使用任意静态托管服务部署。
-
-## 测试与质量
-
-```bash
-pnpm test          # 后端单元/集成测试（bun test）
-pnpm typecheck     # 全仓类型检查
-pnpm format        # 使用 oxfmt 格式化代码（配置 .oxfmtrc.json）
-pnpm format:check  # 检查代码是否已格式化
-```
 
 ## 安全说明
 
