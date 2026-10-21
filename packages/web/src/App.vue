@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useMediaQuery } from '@vueuse/core';
+import { computed, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import ApiSettings from '@/components/ApiSettings.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -8,167 +9,149 @@ import { useProfilesStore } from '@/stores/profiles';
 
 const auth = useAuthStore();
 const profiles = useProfilesStore();
+const route = useRoute();
 const router = useRouter();
 
+const isDesktop = useMediaQuery('(min-width: 768px)');
 const settingsOpen = ref(false);
+const accountOpen = ref(false);
+
+const navItems = computed(() => {
+  const items = [{ name: 'links', label: '短链接', icon: 'format-list-checkbox', to: '/' }];
+  if (auth.hasPermission('links:view_all')) {
+    items.push({ name: 'all-links', label: '全部链接', icon: 'share', to: '/links/all' });
+  }
+  if (auth.hasPermission('users:manage')) {
+    items.push({ name: 'users', label: '用户管理', icon: 'account-circle', to: '/users' });
+  }
+  return items;
+});
+
+const activeNav = computed(() => {
+  if (route.name === 'all-links') return 'all-links';
+  if (route.name === 'users') return 'users';
+  return 'links';
+});
+
+const accountTitle = computed(
+  () => `${profiles.active?.name ?? '当前账号'} · ${auth.info?.username ?? ''}`
+);
+
+const accountActions = computed(() => [
+  { name: '账号配置', icon: 'cog-outline' },
+  { name: '退出登录', icon: 'power', color: 'var(--color-danger)' }
+]);
+
+function navigate(name: string | number) {
+  const item = navItems.value.find((entry) => entry.name === name);
+  if (item) void router.push(item.to);
+}
 
 function logout() {
   void auth.logout().then(() => router.push({ name: 'login' }));
 }
+
+function onAccountSelect(action: { name: string }) {
+  if (action.name === '账号配置') {
+    settingsOpen.value = true;
+    return;
+  }
+  if (action.name === '退出登录') {
+    logout();
+  }
+}
 </script>
 
 <template>
-  <div v-if="auth.authenticated" class="layout">
-    <aside class="sidebar">
-      <div class="brand">Yona-Link</div>
-      <nav class="nav">
-        <router-link to="/">短链接</router-link>
-        <router-link v-if="auth.hasPermission('links:view_all')" to="/links/all"
-          >全部链接</router-link
-        >
-        <router-link v-if="auth.hasPermission('users:manage')" to="/users">用户管理</router-link>
-      </nav>
-      <div class="sidebar-foot">
-        <button
-          type="button"
-          class="link-btn"
-          :title="`当前账号: ${profiles.active?.name ?? ''}`"
-          @click="settingsOpen = true">
-          {{ profiles.active ? `${profiles.active.name}` : '账号配置' }}
-        </button>
-        <span class="muted">
-          {{ auth.info?.username }}
-          <em v-if="auth.isAdmin" class="role-tag">管理员</em>
-        </span>
-        <button type="button" class="link-btn" @click="logout">退出</button>
-      </div>
-    </aside>
-    <main class="content">
-      <router-view />
-    </main>
+  <div v-if="auth.authenticated" class="app-shell">
+    <var-rail-navigation
+      v-if="isDesktop"
+      :active="activeNav"
+      show-label
+      bordered
+      class="desktop-rail"
+      @change="navigate">
+      <var-rail-navigation-item
+        v-for="item in navItems"
+        :key="item.name"
+        :name="item.name"
+        :label="item.label"
+        :icon="item.icon" />
+      <template #end>
+        <var-rail-navigation-item
+          name="account"
+          label="账号"
+          icon="account-circle"
+          @click="accountOpen = true" />
+        <var-rail-navigation-item name="logout" label="退出" icon="power" @click="logout" />
+      </template>
+    </var-rail-navigation>
+
+    <div class="app-body">
+      <var-app-bar
+        v-if="!isDesktop"
+        fixed
+        placeholder
+        safe-area-top
+        type="surface"
+        title="Yona-Link"
+        title-position="left">
+        <template #right>
+          <var-button text round aria-label="账号" @click="accountOpen = true">
+            <var-icon name="account-circle" size="26" />
+          </var-button>
+        </template>
+      </var-app-bar>
+
+      <main class="app-content">
+        <router-view />
+      </main>
+    </div>
+
+    <var-bottom-navigation
+      v-if="!isDesktop"
+      :active="activeNav"
+      fixed
+      safe-area
+      variant
+      active-color="var(--color-primary)"
+      @change="navigate">
+      <var-bottom-navigation-item
+        v-for="item in navItems"
+        :key="item.name"
+        :name="item.name"
+        :label="item.label"
+        :icon="item.icon" />
+    </var-bottom-navigation>
+
+    <var-action-sheet
+      v-model:show="accountOpen"
+      :title="accountTitle"
+      :actions="accountActions"
+      @select="onAccountSelect" />
+
+    <ApiSettings :open="settingsOpen" @close="settingsOpen = false" />
   </div>
   <router-view v-else />
-
-  <ApiSettings :open="settingsOpen" @close="settingsOpen = false" />
 </template>
 
 <style scoped>
-.layout {
+.app-shell {
   display: flex;
   min-height: 100vh;
 }
 
-.sidebar {
-  width: 220px;
+.desktop-rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  gap: 16px;
+  overflow-y: auto;
 }
 
-.brand {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.nav a {
-  color: var(--fg);
-  text-decoration: none;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-}
-
-.nav a:hover {
-  background: var(--border);
-}
-
-.nav a.router-link-active {
-  background: var(--primary);
-  color: var(--primary-fg);
-}
-
-.sidebar-foot {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.link-btn {
-  border: none;
-  background: none;
-  color: var(--primary);
-  padding: 0;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.role-tag {
-  font-style: normal;
-  font-size: 11px;
-  background: var(--primary);
-  color: var(--primary-fg);
-  border-radius: 999px;
-  padding: 0 6px;
-}
-
-.content {
+.app-body {
   flex: 1;
-  padding: 24px;
   min-width: 0;
-}
-
-@media (max-width: 768px) {
-  .layout {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 10px 12px;
-    gap: 8px 12px;
-  }
-
-  .brand {
-    font-size: 16px;
-  }
-
-  .nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .nav a {
-    padding: 4px 8px;
-  }
-
-  .sidebar-foot {
-    margin-top: 0;
-    margin-left: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .content {
-    padding: 12px;
-  }
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Dialog } from '@varlet/ui';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -30,11 +31,18 @@ function useProfile(profile: Profile) {
   error.value = '';
 }
 
-function removeProfile(profile: Profile) {
-  if (!window.confirm(`删除账号配置「${profile.name}」？`)) return;
+async function removeProfile(profile: Profile) {
+  const action = await Dialog({
+    title: '删除账号配置',
+    message: `确定删除「${profile.name}」？`,
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonColor: 'var(--color-danger)'
+  });
+  if (action !== 'confirm') return;
+  const wasActive = profiles.active?.id === profile.id;
   profiles.remove(profile.id);
-  if (profiles.active?.id !== profile.id) return;
-  loadActive();
+  if (wasActive) loadActive();
 }
 
 async function submit() {
@@ -74,81 +82,76 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="login-wrap">
-    <div class="login-card">
-      <h1>Yona-Link</h1>
-      <p class="muted">用户账号登录，可保存多套「API 地址 + 账号」配置</p>
+  <div class="login-page">
+    <var-paper class="login-card" variant="outlined">
+      <h1 class="brand-name">Yona-Link</h1>
+      <p class="text-secondary">用户账号登录，可保存多套「API 地址 + 账号」配置</p>
 
-      <div v-if="profiles.profiles.length > 0" class="profiles">
-        <label>已保存的账号配置</label>
-        <ul class="list">
-          <li v-for="profile in profiles.profiles" :key="profile.id" class="item">
-            <div class="item-info" :class="{ active: profile.id === profiles.active?.id }">
-              <div class="item-name">
-                {{ profile.name }}
-                <em v-if="profile.id === profiles.active?.id">当前</em>
+      <section v-if="profiles.profiles.length > 0" class="profiles">
+        <div class="field-label">已保存的账号配置</div>
+        <var-paper variant="filled" class="profile-list">
+          <var-cell
+            v-for="profile in profiles.profiles"
+            :key="profile.id"
+            :title="profile.name"
+            :description="`${profile.baseUrl} · ${profile.username}`"
+            border>
+            <template #extra>
+              <div class="cell-actions">
+                <var-chip v-if="profile.id === profiles.active?.id" type="primary" size="small"
+                  >当前</var-chip
+                >
+                <var-button text size="small" type="primary" @click="useProfile(profile)"
+                  >使用</var-button
+                >
+                <var-button text size="small" type="danger" @click="removeProfile(profile)"
+                  >删除</var-button
+                >
               </div>
-              <div class="muted mono">{{ profile.baseUrl }} · {{ profile.username }}</div>
-            </div>
-            <div class="item-actions">
-              <button type="button" class="primary" @click="useProfile(profile)">使用</button>
-              <button type="button" class="danger" @click="removeProfile(profile)">删除</button>
-            </div>
-          </li>
-        </ul>
-      </div>
+            </template>
+          </var-cell>
+        </var-paper>
+      </section>
 
-      <form @submit.prevent="submit">
+      <form class="form" @submit.prevent="submit">
         <div class="field">
-          <label>配置名称（可选）</label>
-          <input v-model="name" placeholder="例如: 生产环境" list="profile-names" />
-          <datalist id="profile-names">
-            <option v-for="profile in profiles.profiles" :key="profile.id" :value="profile.name" />
-          </datalist>
+          <span class="field-label">配置名称（可选）</span>
+          <var-input v-model="name" placeholder="例如: 生产环境" clearable />
         </div>
 
         <div class="field">
-          <label>API 地址</label>
-          <input v-model="baseUrl" placeholder="http://localhost:3000/api" list="profile-urls" />
-          <datalist id="profile-urls">
-            <option
-              v-for="profile in profiles.profiles"
-              :key="profile.id"
-              :value="profile.baseUrl" />
-          </datalist>
+          <span class="field-label">API 地址</span>
+          <var-input v-model="baseUrl" placeholder="http://localhost:3000/api" clearable />
         </div>
 
         <div class="field">
-          <label>用户名</label>
-          <input v-model="username" autocomplete="username" placeholder="用户名" />
+          <span class="field-label">用户名</span>
+          <var-input v-model="username" placeholder="用户名" clearable />
         </div>
 
         <div class="field">
-          <label>密码</label>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="密码" />
+          <span class="field-label">密码</span>
+          <var-input v-model="password" type="password" placeholder="密码" />
         </div>
 
-        <label class="checkbox">
-          <input v-model="remember" type="checkbox" />
-          登录成功后保存为账号配置
-        </label>
+        <var-cell title="登录成功后保存为账号配置" class="remember-cell">
+          <template #extra>
+            <var-switch v-model="remember" />
+          </template>
+        </var-cell>
 
-        <p v-if="error" class="error">{{ error }}</p>
+        <var-alert v-if="error" type="danger" variant="tonal" :message="error" />
 
-        <button type="submit" class="primary" :disabled="loading">
+        <var-button type="primary" size="large" block native-type="submit" :loading="loading">
           {{ loading ? '登录中...' : '登录' }}
-        </button>
+        </var-button>
       </form>
-    </div>
+    </var-paper>
   </div>
 </template>
 
 <style scoped>
-.login-wrap {
+.login-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -158,114 +161,39 @@ onMounted(() => {
 
 .login-card {
   width: 100%;
-  max-width: 420px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
+  max-width: 440px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 24px 20px;
+  border-radius: 16px;
 }
 
-.login-card h1 {
-  margin: 0;
+.brand-name {
   font-size: 22px;
+  font-weight: 600;
 }
 
 .profiles {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 200px;
+.profile-list {
+  border-radius: 12px;
+  overflow: hidden;
+  max-height: 220px;
   overflow-y: auto;
 }
 
-.item {
+.cell-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-}
-
-.item-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
   gap: 2px;
 }
 
-.item-info.active .item-name {
-  color: var(--primary);
-}
-
-.item-name {
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.item-name em {
-  font-style: normal;
-  font-size: 11px;
-  background: var(--primary);
-  color: var(--primary-fg);
-  border-radius: 999px;
-  padding: 0 6px;
-}
-
-.item-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.mono {
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field input {
-  width: 100%;
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--fg);
-}
-
-.error {
-  color: var(--danger);
-  margin: 0;
+.remember-cell {
+  padding-inline: 0;
 }
 </style>

@@ -1,9 +1,17 @@
 import { fileURLToPath, URL } from 'node:url';
+import { VarletImportResolver } from '@varlet/import-resolver';
 import vue from '@vitejs/plugin-vue';
+import Components from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({
+      resolvers: [VarletImportResolver()],
+      dts: false
+    })
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { getLink, getLinkStats } from '@/api';
 import type { LinkItem, LinkStats as LinkStatsType } from '@/api/types';
 import { formatDateTime } from '@/utils/format';
 
 const route = useRoute();
+const router = useRouter();
 
 const code = route.params.code as string;
 const link = ref<LinkItem | null>(null);
@@ -43,144 +44,151 @@ onMounted(load);
 
 <template>
   <div class="page">
-    <div class="head">
-      <h2>短链统计</h2>
-      <router-link to="/">返回列表</router-link>
+    <div class="page-header">
+      <var-button text round aria-label="返回" @click="router.push({ name: 'links' })">
+        <var-icon name="chevron-left" size="24" />
+      </var-button>
+      <h1 class="page-title page-title--grow">短链统计</h1>
+      <var-button
+        v-if="link && link.status === 'active'"
+        text
+        size="small"
+        type="primary"
+        @click="router.push(`/links/${link.code}/edit`)">
+        编辑
+      </var-button>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <var-alert v-if="error" type="danger" variant="tonal" :message="error" />
 
-    <div v-if="link" class="cards">
-      <div class="card">
-        <div class="label">短链</div>
-        <div class="mono">{{ link.type === 'alias' ? `@${link.code}` : link.code }}</div>
+    <template v-if="link">
+      <var-paper variant="outlined" class="section">
+        <div class="section-label">短链</div>
+        <div class="short-code mono">
+          {{ link.type === 'alias' ? `@${link.code}` : link.code }}
+        </div>
         <div v-if="stats?.shortUrl" class="short-url">
           <span class="mono">{{ stats.shortUrl }}</span>
-          <button type="button" @click="copyShortUrl">{{ copied ? '已复制' : '复制' }}</button>
+          <var-button text size="small" type="primary" @click="copyShortUrl">
+            <var-icon name="content-copy" size="16" />
+            {{ copied ? '已复制' : '复制' }}
+          </var-button>
         </div>
+      </var-paper>
+
+      <var-paper variant="outlined" class="section">
+        <div class="section-label">目标 URL</div>
+        <a
+          class="target-url"
+          :href="link.targetUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="link.targetUrl">
+          {{ link.targetUrl }}
+        </a>
+      </var-paper>
+
+      <div class="stat-grid">
+        <var-paper variant="filled" class="stat-card">
+          <div class="stat-label">总点击</div>
+          <div class="stat-value">{{ stats?.clickCount ?? 0 }}</div>
+        </var-paper>
+        <var-paper variant="filled" class="stat-card">
+          <div class="stat-label">最近点击</div>
+          <div class="stat-value stat-value--small">
+            {{ stats?.lastClickedAt ? formatDateTime(stats.lastClickedAt) : '-' }}
+          </div>
+        </var-paper>
       </div>
 
-      <div class="card">
-        <div class="label">目标 URL</div>
-        <div class="truncate" :title="link.targetUrl">
-          <a :href="link.targetUrl" target="_blank" rel="noopener noreferrer">{{
-            link.targetUrl
-          }}</a>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="label">总点击</div>
-        <div class="value">{{ stats?.clickCount ?? 0 }}</div>
-      </div>
-
-      <div class="card">
-        <div class="label">最近点击</div>
-        <div>{{ stats?.lastClickedAt ? formatDateTime(stats.lastClickedAt) : '-' }}</div>
-      </div>
-
-      <div class="card">
-        <div class="label">状态</div>
-        <div>{{ link.status === 'active' ? '有效' : '保留期' }}</div>
-      </div>
-
-      <div class="card">
-        <div class="label">类型</div>
-        <div>{{ link.type }}</div>
-      </div>
-
-      <div class="card">
-        <div class="label">过期时间</div>
-        <div>{{ link.permanent ? '长期' : formatDateTime(link.expiresAt) }}</div>
-      </div>
-
-      <div class="card">
-        <div class="label">创建时间</div>
-        <div>{{ formatDateTime(link.createdAt) }}</div>
-      </div>
-    </div>
-
-    <div v-if="link" class="actions">
-      <router-link v-if="link.status === 'active'" :to="`/links/${link.code}/edit`"
-        >编辑链接</router-link
-      >
-    </div>
+      <var-paper variant="outlined" class="detail-panel">
+        <var-cell title="状态" :description="link.status === 'active' ? '有效' : '保留期'" border />
+        <var-cell title="类型" :description="link.type" border />
+        <var-cell
+          title="过期时间"
+          :description="link.permanent ? '长期有效' : formatDateTime(link.expiresAt)"
+          border />
+        <var-cell title="创建时间" :description="formatDateTime(link.createdAt)" />
+      </var-paper>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.page {
-  max-width: 720px;
+.section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.head h2 {
-  margin: 0;
-}
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
   min-width: 0;
 }
 
-.label {
-  color: var(--muted);
-  font-size: 12px;
+.section-label {
+  font-size: 13px;
+  color: var(--color-on-surface-variant, #6b7280);
 }
 
-.mono {
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-  word-break: break-all;
-}
-
-.value {
-  font-size: 24px;
+.short-code {
+  font-size: 20px;
   font-weight: 600;
+  word-break: break-all;
 }
 
 .short-url {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.short-url span {
-  flex: 1;
   min-width: 0;
 }
 
-.truncate {
+.short-url > span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
 
-.error {
-  color: var(--danger);
-  margin: 0;
+.target-url {
+  word-break: break-all;
+  font-size: 13px;
 }
 
-.actions {
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--color-on-surface-variant, #6b7280);
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.stat-value--small {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.detail-panel {
+  border-radius: 12px;
+  overflow: hidden;
 }
 </style>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { Dialog, Snackbar } from '@varlet/ui';
+import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { deleteLink, listAllLinks, listUsers } from '@/api';
 import type { LinkItem, UserRow } from '@/api/types';
@@ -7,18 +9,43 @@ import { useAuthStore } from '@/stores/auth';
 import { formatDate, formatDateTime } from '@/utils/format';
 
 const auth = useAuthStore();
+const router = useRouter();
 
 const items = ref<LinkItem[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
-const type = ref('');
-const status = ref('');
+const type = ref('all');
+const status = ref('all');
 const q = ref('');
-const userId = ref<number | ''>('');
+const userId = ref<number | 'all'>('all');
 const userOptions = ref<UserRow[]>([]);
 const loading = ref(false);
 const error = ref('');
+
+const typeOptions = [
+  { label: '全部类型', value: 'all' },
+  { label: 'hash', value: 'hash' },
+  { label: 'alias', value: 'alias' }
+];
+
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '有效', value: 'active' },
+  { label: '保留期', value: 'retired' }
+];
+
+const userSelectOptions = computed(() => [
+  { label: '全部创建者', value: 'all' },
+  ...userOptions.value.map((user) => ({
+    label: `${user.username}${user.role === 'admin' ? '（管理员）' : ''}`,
+    value: user.id
+  }))
+]);
+
+function showTotal(count: number): string {
+  return `共 ${count} 条`;
+}
 
 async function loadUsers() {
   try {
@@ -35,10 +62,10 @@ async function load() {
     const result = await listAllLinks({
       page: page.value,
       pageSize: pageSize.value,
-      type: type.value ? (type.value as 'hash' | 'alias') : undefined,
-      status: status.value ? (status.value as 'active' | 'retired') : undefined,
+      type: type.value === 'all' ? undefined : (type.value as 'hash' | 'alias'),
+      status: status.value === 'all' ? undefined : (status.value as 'active' | 'retired'),
       q: q.value || undefined,
-      userId: userId.value === '' ? undefined : userId.value
+      userId: userId.value === 'all' ? undefined : userId.value
     });
     items.value = result.items;
     total.value = result.total;
@@ -54,27 +81,26 @@ function applyFilters() {
   void load();
 }
 
-function nextPage() {
-  if (page.value * pageSize.value < total.value) {
-    page.value += 1;
-    void load();
-  }
-}
-
-function prevPage() {
-  if (page.value > 1) {
-    page.value -= 1;
-    void load();
-  }
+function onPageChange(current: number) {
+  page.value = current;
+  void load();
 }
 
 async function remove(code: string) {
-  if (!window.confirm(`确定删除短链 /${code} 吗？删除后将进入保留期。`)) return;
+  const action = await Dialog({
+    title: '删除短链',
+    message: `确定删除短链 /${code} 吗？删除后将进入保留期。`,
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonColor: 'var(--color-danger)'
+  });
+  if (action !== 'confirm') return;
   try {
     await deleteLink(code);
+    Snackbar.success('已删除');
     await load();
   } catch (e) {
-    alert(e instanceof Error ? e.message : '删除失败');
+    Snackbar.error(e instanceof Error ? e.message : '删除失败');
   }
 }
 
@@ -90,203 +116,143 @@ onMounted(() => {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <h2>全部链接</h2>
-      <span class="muted">所有用户创建的短链（仅管理员可见）</span>
+    <div class="page-header">
+      <div class="page-title--grow">
+        <h1 class="page-title">全部链接</h1>
+        <p class="page-subtitle">所有用户创建的短链 · 共 {{ total }} 条</p>
+      </div>
     </div>
 
     <div class="filters">
-      <input v-model="q" placeholder="搜索 code 或目标 URL" @keyup.enter="applyFilters" />
-      <select v-model="userId" @change="applyFilters">
-        <option value="">全部创建者</option>
-        <option v-for="user in userOptions" :key="user.id" :value="user.id">
-          {{ user.username }}{{ user.role === 'admin' ? '（管理员）' : '' }}
-        </option>
-      </select>
-      <select v-model="type" @change="applyFilters">
-        <option value="">全部类型</option>
-        <option value="hash">hash</option>
-        <option value="alias">alias</option>
-      </select>
-      <select v-model="status" @change="applyFilters">
-        <option value="">全部状态</option>
-        <option value="active">有效</option>
-        <option value="retired">保留期</option>
-      </select>
-      <button @click="applyFilters">搜索</button>
+      <var-input
+        v-model="q"
+        placeholder="搜索 code 或目标 URL"
+        clearable
+        @keyup.enter="applyFilters">
+        <template #prepend-icon>
+          <var-icon name="magnify" />
+        </template>
+      </var-input>
+      <var-select v-model="userId" :options="userSelectOptions" @change="applyFilters" />
+      <div class="filter-row">
+        <var-select v-model="type" :options="typeOptions" @change="applyFilters" />
+        <var-select v-model="status" :options="statusOptions" @change="applyFilters" />
+      </div>
+      <var-button block @click="applyFilters">搜索</var-button>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <var-alert v-if="error" type="danger" variant="tonal" :message="error" />
 
-    <div class="table-scroll">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>短链</th>
-            <th>类型</th>
-            <th>创建者</th>
-            <th>目标</th>
-            <th>状态</th>
-            <th>过期时间</th>
-            <th>点击</th>
-            <th>创建时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="link in items" :key="link.code">
-            <td class="mono">{{ displayCode(link) }}</td>
-            <td>{{ link.type }}</td>
-            <td>{{ link.createdBy ?? '（已删除）' }}</td>
-            <td class="truncate" :title="link.targetUrl">{{ link.targetUrl }}</td>
-            <td>
-              <span :class="['badge', link.status]">{{
-                link.status === 'active' ? '有效' : '保留期'
-              }}</span>
-            </td>
-            <td>{{ link.permanent ? '长期' : formatDateTime(link.expiresAt) }}</td>
-            <td>{{ link.clickCount }}</td>
-            <td>{{ formatDate(link.createdAt) }}</td>
-            <td class="actions">
-              <router-link
-                v-if="auth.hasPermission('links:stats')"
-                :to="`/links/${link.code}/stats`"
-                >统计</router-link
-              >
-              <router-link
-                v-if="auth.hasPermission('links:update')"
-                :to="`/links/${link.code}/edit`"
-                >编辑</router-link
-              >
-              <button
-                v-if="auth.hasPermission('links:delete')"
-                type="button"
-                class="danger"
-                @click="remove(link.code)">
-                删除
-              </button>
-            </td>
-          </tr>
-          <tr v-if="!loading && items.length === 0">
-            <td colspan="9" class="muted center">暂无数据</td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-if="loading && items.length === 0" class="center-block">
+      <var-loading type="circle" description="加载中..." />
+    </div>
+    <var-result
+      v-else-if="!loading && items.length === 0"
+      type="empty"
+      title="暂无数据"
+      description="换个筛选条件试试" />
+    <div v-else class="link-list">
+      <var-card v-for="link in items" :key="link.code" variant="outlined" class="link-card">
+        <template #title="{ slotClass }">
+          <div :class="slotClass">
+            <div class="link-title">
+              <span class="mono">{{ displayCode(link) }}</span>
+              <var-chip
+                :type="link.status === 'active' ? 'success' : 'warning'"
+                size="small"
+                :plain="true">
+                {{ link.status === 'active' ? '有效' : '保留期' }}
+              </var-chip>
+            </div>
+          </div>
+        </template>
+        <template #subtitle="{ slotClass }">
+          <div :class="slotClass">
+            <span class="text-secondary">
+              {{ link.createdBy ?? '（已删除）' }} · {{ link.type }} · 点击 {{ link.clickCount }} ·
+              {{ formatDate(link.createdAt) }}
+            </span>
+          </div>
+        </template>
+        <div class="link-target mono text-secondary" :title="link.targetUrl">
+          {{ link.targetUrl }}
+        </div>
+        <div class="link-expiry text-secondary">
+          过期：{{ link.permanent ? '长期有效' : formatDateTime(link.expiresAt) }}
+        </div>
+        <template #extra>
+          <div class="card-actions">
+            <var-button
+              v-if="auth.hasPermission('links:stats')"
+              text
+              size="small"
+              @click="router.push(`/links/${link.code}/stats`)">
+              统计
+            </var-button>
+            <var-button
+              v-if="auth.hasPermission('links:update')"
+              text
+              size="small"
+              @click="router.push(`/links/${link.code}/edit`)">
+              编辑
+            </var-button>
+            <var-button
+              v-if="auth.hasPermission('links:delete')"
+              text
+              size="small"
+              type="danger"
+              @click="remove(link.code)">
+              删除
+            </var-button>
+          </div>
+        </template>
+      </var-card>
     </div>
 
-    <div class="pager">
-      <button :disabled="page <= 1" @click="prevPage">上一页</button>
-      <span class="muted"
-        >第 {{ page }} 页 / 共 {{ Math.max(1, Math.ceil(total / pageSize)) }} 页（{{
-          total
-        }}
-        条）</span
-      >
-      <button :disabled="page * pageSize >= total" @click="nextPage">下一页</button>
-    </div>
+    <var-pagination
+      v-if="total > pageSize"
+      :current="page"
+      :size="pageSize"
+      :total="total"
+      :max-pager-count="5"
+      :show-total="showTotal"
+      @change="onPageChange" />
   </div>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.page-head h2 {
-  margin: 0;
-}
-
 .filters {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link-card {
+  border-radius: 12px;
+}
+
+.link-title {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.filters input {
-  flex: 1;
-  min-width: 200px;
-}
-
-.table-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.table {
-  width: 100%;
-  min-width: 860px;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.table th {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-.mono {
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-}
-
-.truncate {
-  max-width: 240px;
+.link-target,
+.link-expiry {
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.center {
-  text-align: center;
-}
-
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.badge.active {
-  background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
-}
-
-.badge.retired {
-  background: rgba(234, 179, 8, 0.15);
-  color: #ca8a04;
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.error {
-  color: var(--danger);
-  margin: 0;
+.var-pagination {
+  align-self: center;
 }
 </style>

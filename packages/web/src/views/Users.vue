@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { Dialog, Snackbar } from '@varlet/ui';
+import { computed, onMounted, ref } from 'vue';
 
 import { createUser, deleteUser, listUsers, updateUser } from '@/api';
 import type { UserRow } from '@/api/types';
@@ -13,6 +14,22 @@ const creating = ref(false);
 const newUsername = ref('');
 const newPassword = ref('');
 const createError = ref('');
+
+const actionOpen = ref(false);
+const selectedUser = ref<UserRow | null>(null);
+
+const passwordOpen = ref(false);
+const passwordValue = ref('');
+const resetting = ref(false);
+
+const userActions = computed(() => {
+  if (!selectedUser.value) return [];
+  return [
+    { name: selectedUser.value.enabled ? '禁用账号' : '启用账号', icon: 'power' },
+    { name: '重置密码', icon: 'lock-outline' },
+    { name: '删除用户', icon: 'delete', color: 'var(--color-danger)' }
+  ];
+});
 
 async function load() {
   loading.value = true;
@@ -41,6 +58,7 @@ async function create() {
     await createUser({ username: newUsername.value.trim(), password: newPassword.value });
     newUsername.value = '';
     newPassword.value = '';
+    Snackbar.success('用户已创建');
     await load();
   } catch (e) {
     createError.value = e instanceof Error ? e.message : '创建失败';
@@ -52,33 +70,72 @@ async function create() {
 async function toggleEnabled(user: UserRow) {
   try {
     await updateUser(user.id, { enabled: !user.enabled });
+    Snackbar.success(user.enabled ? '账号已禁用' : '账号已启用');
     await load();
   } catch (e) {
-    alert(e instanceof Error ? e.message : '操作失败');
+    Snackbar.error(e instanceof Error ? e.message : '操作失败');
   }
 }
 
-async function resetPassword(user: UserRow) {
-  const next = window.prompt(`为用户「${user.username}」设置新密码（至少 8 位）：`);
-  if (next === null || !next) return;
+function openActions(user: UserRow) {
+  selectedUser.value = user;
+  actionOpen.value = true;
+}
+
+function openResetPassword() {
+  passwordValue.value = '';
+  passwordOpen.value = true;
+}
+
+function onUserAction(action: { name: string }) {
+  const user = selectedUser.value;
+  if (!user) return;
+  if (action.name === '重置密码') {
+    openResetPassword();
+    return;
+  }
+  if (action.name === '删除用户') {
+    void remove(user);
+    return;
+  }
+  void toggleEnabled(user);
+}
+
+async function submitReset() {
+  const user = selectedUser.value;
+  if (!user) return;
+  if (!passwordValue.value) {
+    Snackbar.warning('请输入新密码');
+    return;
+  }
+  resetting.value = true;
   try {
-    await updateUser(user.id, { password: next });
-    alert('密码已重置');
+    await updateUser(user.id, { password: passwordValue.value });
+    passwordOpen.value = false;
+    Snackbar.success('密码已重置');
     await load();
   } catch (e) {
-    alert(e instanceof Error ? e.message : '重置失败');
+    Snackbar.error(e instanceof Error ? e.message : '重置失败');
+  } finally {
+    resetting.value = false;
   }
 }
 
 async function remove(user: UserRow) {
-  if (!window.confirm(`确定删除用户「${user.username}」吗？其创建的短链将保留但不再归属该用户。`)) {
-    return;
-  }
+  const action = await Dialog({
+    title: '删除用户',
+    message: `确定删除用户「${user.username}」吗？其创建的短链将保留但不再归属该用户。`,
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonColor: 'var(--color-danger)'
+  });
+  if (action !== 'confirm') return;
   try {
     await deleteUser(user.id);
+    Snackbar.success('用户已删除');
     await load();
   } catch (e) {
-    alert(e instanceof Error ? e.message : '删除失败');
+    Snackbar.error(e instanceof Error ? e.message : '删除失败');
   }
 }
 
@@ -87,170 +144,141 @@ onMounted(load);
 
 <template>
   <div class="page">
-    <h2>用户管理</h2>
-
-    <p v-if="error" class="error">{{ error }}</p>
-
-    <section class="create">
-      <h3>创建新用户</h3>
-      <div class="field">
-        <label>用户名（2-32 位字母/数字/下划线/短横线）</label>
-        <input v-model="newUsername" placeholder="例如: alice" />
+    <div class="page-header">
+      <div class="page-title--grow">
+        <h1 class="page-title">用户管理</h1>
+        <p class="page-subtitle">共 {{ users.length }} 位用户</p>
       </div>
-      <div class="field">
-        <label>初始密码（至少 8 位）</label>
-        <input v-model="newPassword" type="password" autocomplete="off" placeholder="初始密码" />
-      </div>
-      <p v-if="createError" class="error">{{ createError }}</p>
-      <button type="button" class="primary" :disabled="creating" @click="create">
-        {{ creating ? '创建中...' : '创建用户' }}
-      </button>
-    </section>
-
-    <div class="table-scroll">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>用户名</th>
-            <th>角色</th>
-            <th>状态</th>
-            <th>链接数</th>
-            <th>最近登录</th>
-            <th>创建时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="user in users" :key="user.id">
-            <td>
-              {{ user.username }}
-              <em v-if="user.role === 'admin'" class="admin-tag">管理员</em>
-            </td>
-            <td>{{ user.role === 'admin' ? '管理员' : '普通用户' }}</td>
-            <td>
-              <span :class="['badge', user.enabled ? 'active' : 'disabled']">
-                {{ user.enabled ? '启用' : '禁用' }}
-              </span>
-            </td>
-            <td>{{ user.linkCount }}</td>
-            <td>{{ formatDateTime(user.lastLoginAt) }}</td>
-            <td>{{ formatDateTime(user.createdAt) }}</td>
-            <td class="actions">
-              <template v-if="user.role !== 'admin'">
-                <button type="button" @click="toggleEnabled(user)">
-                  {{ user.enabled ? '禁用' : '启用' }}
-                </button>
-                <button type="button" @click="resetPassword(user)">重置密码</button>
-                <button type="button" class="danger" @click="remove(user)">删除</button>
-              </template>
-              <span v-else class="muted">—</span>
-            </td>
-          </tr>
-          <tr v-if="!loading && users.length === 0">
-            <td colspan="7" class="muted center">暂无用户</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
+
+    <var-alert v-if="error" type="danger" variant="tonal" :message="error" />
+
+    <var-paper variant="outlined" class="create-card">
+      <h2 class="section-title">创建新用户</h2>
+      <div class="field">
+        <span class="field-label">用户名（2-32 位字母/数字/下划线/短横线）</span>
+        <var-input v-model="newUsername" placeholder="例如: alice" clearable />
+      </div>
+      <div class="field">
+        <span class="field-label">初始密码（至少 8 位）</span>
+        <var-input v-model="newPassword" type="password" placeholder="初始密码" />
+      </div>
+      <var-alert v-if="createError" type="danger" variant="tonal" :message="createError" />
+      <var-button type="primary" block :loading="creating" @click="create">
+        {{ creating ? '创建中...' : '创建用户' }}
+      </var-button>
+    </var-paper>
+
+    <div v-if="loading && users.length === 0" class="center-block">
+      <var-loading type="circle" description="加载中..." />
+    </div>
+    <var-result
+      v-else-if="!loading && users.length === 0"
+      type="empty"
+      title="暂无用户"
+      description="创建第一个普通用户" />
+    <var-paper v-else variant="outlined" class="user-panel">
+      <var-cell v-for="user in users" :key="user.id" :title="user.username" border>
+        <template #description>
+          <div class="user-tags">
+            <var-chip :type="user.role === 'admin' ? 'primary' : 'default'" size="small" plain>
+              {{ user.role === 'admin' ? '管理员' : '普通用户' }}
+            </var-chip>
+            <var-chip :type="user.enabled ? 'success' : 'default'" size="small" plain>
+              {{ user.enabled ? '启用' : '禁用' }}
+            </var-chip>
+            <span class="user-count">链接 {{ user.linkCount }}</span>
+          </div>
+          <div class="user-meta">
+            最近登录：{{ formatDateTime(user.lastLoginAt) }} · 创建：{{
+              formatDateTime(user.createdAt)
+            }}
+          </div>
+        </template>
+        <template #extra>
+          <var-button
+            v-if="user.role !== 'admin'"
+            text
+            round
+            aria-label="用户操作"
+            @click.stop="openActions(user)">
+            <var-icon name="dots-vertical" size="22" />
+          </var-button>
+          <span v-else class="text-secondary">—</span>
+        </template>
+      </var-cell>
+    </var-paper>
+
+    <var-action-sheet
+      v-model:show="actionOpen"
+      :title="selectedUser?.username"
+      :actions="userActions"
+      @select="onUserAction" />
+
+    <var-dialog
+      v-model:show="passwordOpen"
+      title="重置密码"
+      :confirm-button="false"
+      :cancel-button="false"
+      :close-on-click-overlay="false">
+      <div class="password-dialog">
+        <p class="text-secondary">为用户「{{ selectedUser?.username }}」设置新密码（至少 8 位）</p>
+        <var-input v-model="passwordValue" type="password" placeholder="新密码" />
+        <div class="dialog-actions">
+          <var-button text @click="passwordOpen = false">取消</var-button>
+          <var-button type="primary" :loading="resetting" @click="submitReset">确定</var-button>
+        </div>
+      </div>
+    </var-dialog>
   </div>
 </template>
 
 <style scoped>
-.page {
+.create-card {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 960px;
-}
-
-.create {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 480px;
+  border-radius: 12px;
 }
 
-.create h3 {
-  margin: 0;
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
 }
 
-.field {
+.user-panel {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.user-tags {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.field input {
-  max-width: 320px;
-}
-
-.admin-tag {
-  font-style: normal;
-  font-size: 11px;
-  background: var(--primary);
-  color: var(--primary-fg);
-  border-radius: 999px;
-  padding: 0 6px;
-}
-
-.table-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.table {
-  width: 100%;
-  min-width: 720px;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.table th {
-  color: var(--muted);
-  font-weight: 500;
+.user-count {
   font-size: 12px;
-  text-transform: uppercase;
+  color: var(--color-on-surface-variant, #6b7280);
 }
 
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
+.user-meta {
+  margin-top: 4px;
   font-size: 12px;
+  color: var(--color-on-surface-variant, #6b7280);
 }
 
-.badge.active {
-  background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
-}
-
-.badge.disabled {
-  background: rgba(100, 116, 139, 0.15);
-  color: var(--muted);
-}
-
-.actions {
+.password-dialog {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-.center {
-  text-align: center;
-}
-
-.error {
-  color: var(--danger);
-  margin: 0;
 }
 </style>

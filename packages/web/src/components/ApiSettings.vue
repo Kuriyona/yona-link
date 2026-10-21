@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Dialog } from '@varlet/ui';
 import { ref } from 'vue';
 
 import type { Profile } from '@/api/types';
@@ -13,6 +14,10 @@ const profiles = useProfilesStore();
 
 const switching = ref(false);
 const error = ref('');
+
+function onShow(show: boolean) {
+  if (!show) emit('close');
+}
 
 async function switchTo(profile: Profile) {
   if (switching.value) return;
@@ -30,161 +35,100 @@ async function switchTo(profile: Profile) {
   }
 }
 
-function remove(profile: Profile) {
-  if (!window.confirm(`删除账号配置「${profile.name}」？`)) return;
+async function remove(profile: Profile) {
+  const action = await Dialog({
+    title: '删除账号配置',
+    message: `确定删除「${profile.name}」？`,
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonColor: 'var(--color-danger)'
+  });
+  if (action !== 'confirm') return;
   profiles.remove(profile.id);
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="backdrop" @click.self="emit('close')">
-      <div class="panel">
-        <h3>账号配置</h3>
-        <p class="muted">
-          每套配置包含 API 地址与登录账号，点击「切换」即可生效；新配置请在登录页添加
-        </p>
+  <var-popup :show="props.open" position="bottom" safe-area @update:show="onShow">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2 class="sheet-title">账号配置</h2>
+        <var-button text round aria-label="关闭" @click="emit('close')">
+          <var-icon name="window-close" size="22" />
+        </var-button>
+      </div>
+      <p class="text-secondary">
+        每套配置包含 API 地址与登录账号，点击「切换」即可生效；新配置请在登录页添加
+      </p>
 
-        <ul class="list">
-          <li v-for="profile in profiles.profiles" :key="profile.id" class="item">
-            <div class="item-info" :class="{ active: profile.id === profiles.active?.id }">
-              <div class="item-name">
-                {{ profile.name }}
-                <em v-if="profile.id === profiles.active?.id">当前</em>
-              </div>
-              <div class="muted mono">{{ profile.baseUrl }} · {{ profile.username }}</div>
-            </div>
-            <div class="item-actions">
-              <button
-                type="button"
-                class="primary"
+      <var-paper variant="filled" class="profile-list">
+        <var-cell
+          v-for="profile in profiles.profiles"
+          :key="profile.id"
+          :title="profile.name"
+          :description="`${profile.baseUrl} · ${profile.username}`"
+          border>
+          <template #extra>
+            <div class="cell-actions">
+              <var-chip v-if="profile.id === profiles.active?.id" type="primary" size="small"
+                >当前</var-chip
+              >
+              <var-button
+                text
+                size="small"
+                type="primary"
                 :disabled="switching"
                 @click="switchTo(profile)">
                 切换
-              </button>
-              <button type="button" class="danger" @click="remove(profile)">删除</button>
+              </var-button>
+              <var-button text size="small" type="danger" @click="remove(profile)">
+                删除
+              </var-button>
             </div>
-          </li>
-          <li v-if="profiles.profiles.length === 0" class="muted empty">暂无保存的配置</li>
-        </ul>
+          </template>
+        </var-cell>
+        <var-cell v-if="profiles.profiles.length === 0" title="暂无保存的配置" />
+      </var-paper>
 
-        <p v-if="error" class="error">{{ error }}</p>
+      <var-alert v-if="error" type="danger" variant="tonal" :message="error" />
 
-        <div class="foot">
-          <button type="button" @click="emit('close')">关闭</button>
-        </div>
-      </div>
+      <var-button block @click="emit('close')">关闭</var-button>
     </div>
-  </Teleport>
+  </var-popup>
 </template>
 
 <style scoped>
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  z-index: 100;
-}
-
-.panel {
-  width: 100%;
-  max-width: 460px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px;
+.sheet {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.panel h3 {
-  margin: 0;
-}
-
-.muted {
-  margin: 0;
-}
-
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
+  gap: 16px;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 16px 16px 0 0;
+  background: var(--color-body, #ffffff);
+  max-height: 85vh;
   overflow-y: auto;
 }
 
-.item {
+.sheet-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 10px;
 }
 
-.item-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.sheet-title {
+  font-size: 18px;
+  font-weight: 600;
 }
 
-.item-info.active .item-name {
-  color: var(--primary);
+.profile-list {
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.item-name {
-  font-weight: 500;
+.cell-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.item-name em {
-  font-style: normal;
-  font-size: 11px;
-  background: var(--primary);
-  color: var(--primary-fg);
-  border-radius: 999px;
-  padding: 0 6px;
-}
-
-.item-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.mono {
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty {
-  text-align: center;
-  padding: 8px 0;
-}
-
-.foot {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.error {
-  color: var(--danger);
-  margin: 0;
+  gap: 2px;
 }
 </style>
