@@ -15,6 +15,10 @@ body,
 body {
   margin: 0;
   font-family:
+    'Inter',
+    'Source Han Sans CN',
+    'Noto Sans CJK SC',
+    'PingFang SC',
     system-ui,
     -apple-system,
     'Segoe UI',
@@ -39,6 +43,10 @@ p {
 
 a {
   color: var(--color-primary, #2563eb);
+}
+
+.var-chip {
+  font-family: inherit;
 }
 
 .app-content {
