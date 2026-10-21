@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kuriyona-links",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    // Web 管理面板构建产物（pnpm build 输出到 public/panel/）
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kuriyona-links",
+      // 部署前替换为 `wrangler d1 create kuriyona-links` 返回的真实 ID
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

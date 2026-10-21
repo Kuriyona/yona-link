@@ -8,10 +8,21 @@ data/
 *.db-shm
 .env
 .env.*
+.dev.vars
+.dev.vars.*
 !.env.example
+!.dev.vars.example
 *.log
 .DS_Store
 .idea/
 .vscode/
 
 *.tsbuildinfo
+
+# Cloudflare Workers
+packages/worker/.wrangler/
+packages/worker/worker-configuration.d.ts
+# 本地部署配置（复制 wrangler.example.jsonc 后自行填写）
+packages/worker/wrangler.jsonc
+# 管理面板构建产物（pnpm build 生成）
+packages/worker/public/panel/

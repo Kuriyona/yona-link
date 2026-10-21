@@ -1,0 +1,25 @@
+# 复制为 .dev.vars 供 `wrangler dev` 使用；线上用 `wrangler secret put` 配置 ADMIN_PASSWORD
+# 管理员账号（默认 admin）与密码（必填）
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-me
+
+# [domain] 根路径默认跳转目标（可留空）
+DEFAULT_REDIRECT_URL=https://example.com
+
+# 对外展示完整短链时使用的域名（如 https://s.example.com）
+PUBLIC_LINK_DOMAIN=
+
+# 随机 hash 长度（3-32）
+HASH_LENGTH=6
+
+# 删除/失效后保留天数
+RETENTION_DAYS=7
+
+# 登录会话有效期（天）
+SESSION_TTL_DAYS=7
+
+# API 每分钟每 IP 请求上限（按 Worker isolate 计）
+RATE_LIMIT_MAX=120
+
+# 长期（permanent）链接跳转是否使用 301（默认 false 使用 302）
+RESPONSE_301_FOR_PERMANENT=false

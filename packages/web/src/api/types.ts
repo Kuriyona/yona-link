@@ -12,14 +12,6 @@ export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
 
-export interface Profile {
-  id: string;
-  name: string;
-  baseUrl: string;
-  username: string;
-  token: string;
-}
-
 export interface UserInfo {
   id: number;
   username: string;

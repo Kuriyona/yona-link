@@ -1,24 +1,15 @@
 import { defineStore } from 'pinia';
 
 import { login as apiLogin, logout as apiLogout, verify } from '@/api';
-import {
-  clearSessionProfile,
-  getToken,
-  saveProfile,
-  setActiveProfile,
-  setSessionProfile
-} from '@/api/credentials';
 import type { Permission, UserInfo } from '@/api/types';
 
 interface AuthState {
-  token: string | null;
   info: UserInfo | null;
   loading: boolean;
 }
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    token: getToken(),
     info: null,
     loading: false
   }),
@@ -31,34 +22,11 @@ export const useAuthStore = defineStore('auth', {
     hasPermission(perm: Permission): boolean {
       return this.permissions.includes(perm);
     },
-    async login(input: {
-      baseUrl: string;
-      username: string;
-      password: string;
-      name: string;
-      remember: boolean;
-    }): Promise<void> {
-      setSessionProfile(input.baseUrl, '', '');
-      const result = await apiLogin({ username: input.username, password: input.password });
-      if (input.remember) {
-        const profile = saveProfile({
-          name: input.name,
-          baseUrl: input.baseUrl,
-          username: result.user.username,
-          token: result.token
-        });
-        setActiveProfile(profile.id);
-      } else {
-        setSessionProfile(input.baseUrl, result.user.username, result.token);
-      }
-      this.token = getToken();
+    async login(input: { username: string; password: string }): Promise<void> {
+      const result = await apiLogin(input);
       this.info = result.user;
     },
     async refresh(): Promise<void> {
-      if (!this.token) {
-        this.info = null;
-        return;
-      }
       this.loading = true;
       try {
         this.info = await verify();
@@ -75,8 +43,6 @@ export const useAuthStore = defineStore('auth', {
       } catch {
         // 忽略：即使会话已失效也清除本地状态
       }
-      clearSessionProfile();
-      this.token = null;
       this.info = null;
     }
   }

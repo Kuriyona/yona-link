@@ -1,21 +1,21 @@
 {
-  "name": "yona-link",
+  "name": "kuriyona-links",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm --parallel --filter @yona-link/* dev",
-    "dev:server": "pnpm --filter @yona-link/server dev",
-    "dev:web": "pnpm --filter @yona-link/web dev",
-    "build": "pnpm --filter @yona-link/web build",
-    "build:server": "pnpm --filter @yona-link/server build:server",
-    "start": "pnpm --filter @yona-link/server start",
-    "test": "pnpm --filter @yona-link/server test",
-    "typecheck": "pnpm --filter @yona-link/server typecheck && pnpm --filter @yona-link/web typecheck",
+    "dev": "pnpm --parallel --filter \"@kuriyona/*\" dev",
+    "dev:worker": "pnpm --filter @kuriyona/links-worker dev",
+    "dev:web": "pnpm --filter @kuriyona/links-web dev",
+    "build": "pnpm --filter @kuriyona/links-web build",
+    "deploy": "pnpm build && pnpm --filter @kuriyona/links-worker run deploy",
+    "test": "pnpm --filter @kuriyona/links-worker test",
+    "typecheck": "pnpm --filter @kuriyona/links-worker typecheck && pnpm --filter @kuriyona/links-web typecheck",
     "format": "oxfmt -c .oxfmtrc.json .",
     "format:check": "oxfmt -c .oxfmtrc.json --check .",
-    "db:generate": "pnpm --filter @yona-link/server db:generate",
-    "db:migrate": "pnpm --filter @yona-link/server db:migrate",
-    "db:push": "pnpm --filter @yona-link/server db:push"
+    "db:generate": "pnpm --filter @kuriyona/links-worker db:generate",
+    "db:migrate:local": "pnpm --filter @kuriyona/links-worker db:migrate:local",
+    "db:migrate:remote": "pnpm --filter @kuriyona/links-worker db:migrate:remote",
+    "cf-typegen": "pnpm --filter @kuriyona/links-worker cf-typegen"
   },
   "devDependencies": {
     "oxfmt": "^0.62.0"

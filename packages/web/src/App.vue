@@ -3,17 +3,13 @@ import { useMediaQuery } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import ApiSettings from '@/components/ApiSettings.vue';
 import { useAuthStore } from '@/stores/auth';
-import { useProfilesStore } from '@/stores/profiles';
 
 const auth = useAuthStore();
-const profiles = useProfilesStore();
 const route = useRoute();
 const router = useRouter();
 
 const isDesktop = useMediaQuery('(min-width: 768px)');
-const settingsOpen = ref(false);
 const accountOpen = ref(false);
 
 const navItems = computed(() => {
@@ -33,12 +29,9 @@ const activeNav = computed(() => {
   return 'links';
 });
 
-const accountTitle = computed(
-  () => `${profiles.active?.name ?? '当前账号'} · ${auth.info?.username ?? ''}`
-);
+const accountTitle = computed(() => auth.info?.username ?? '当前账号');
 
 const accountActions = computed(() => [
-  { name: '账号配置', icon: 'cog-outline' },
   { name: '退出登录', icon: 'power', color: 'var(--color-danger)' }
 ]);
 
@@ -52,13 +45,7 @@ function logout() {
 }
 
 function onAccountSelect(action: { name: string }) {
-  if (action.name === '账号配置') {
-    settingsOpen.value = true;
-    return;
-  }
-  if (action.name === '退出登录') {
-    logout();
-  }
+  if (action.name === '退出登录') logout();
 }
 </script>
 
@@ -94,7 +81,7 @@ function onAccountSelect(action: { name: string }) {
         placeholder
         safe-area-top
         type="surface"
-        title="Yona-Link"
+        title="Kuriyona Links"
         title-position="left">
         <template #right>
           <var-button text round aria-label="账号" @click="accountOpen = true">
@@ -129,8 +116,6 @@ function onAccountSelect(action: { name: string }) {
       :title="accountTitle"
       :actions="accountActions"
       @select="onAccountSelect" />
-
-    <ApiSettings :open="settingsOpen" @close="settingsOpen = false" />
   </div>
   <router-view v-else />
 </template>

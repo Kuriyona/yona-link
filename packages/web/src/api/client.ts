@@ -1,4 +1,4 @@
-import { getApiBaseUrl, getToken } from './credentials';
+const API_BASE_URL = '/api';
 
 export class ApiError extends Error {
   constructor(
@@ -17,17 +17,15 @@ interface ApiResponse<T> {
 }
 
 class ApiClient {
-  private baseUrl(): string {
-    return getApiBaseUrl().replace(/\/$/, '');
-  }
-
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const headers = new Headers(init.headers);
     if (init.body) headers.set('content-type', 'application/json');
-    const token = getToken();
-    if (token) headers.set('authorization', `Bearer ${token}`);
 
-    const res = await fetch(`${this.baseUrl()}${path}`, { ...init, headers });
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: 'same-origin'
+    });
     let payload: ApiResponse<T> | null = null;
     try {
       payload = (await res.json()) as ApiResponse<T>;

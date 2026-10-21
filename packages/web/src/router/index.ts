@@ -16,7 +16,7 @@ declare module 'vue-router' {
 }
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: Login },
     {
@@ -61,17 +61,13 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
 
-  if (!auth.token && to.name !== 'login') {
-    return { name: 'login' };
+  if (to.name === 'login') {
+    return auth.info ? { name: 'links' } : true;
   }
-  if (auth.token && to.name === 'login') {
-    return { name: 'links' };
-  }
-  if (auth.token && !auth.info) {
+  if (!auth.info) {
     try {
       await auth.refresh();
     } catch {
-      await auth.logout();
       return { name: 'login' };
     }
   }

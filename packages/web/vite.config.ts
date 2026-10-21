@@ -5,6 +5,7 @@ import Components from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: '/panel/',
   plugins: [
     vue(),
     Components({
@@ -18,16 +19,18 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
+    port: process.env.PORT ? Number(process.env.PORT) : undefined,
     proxy: {
       '/api': {
-        target: process.env.API_PROXY_TARGET ?? 'http://localhost:3000',
-        changeOrigin: true
+        target:
+          process.env.API_PROXY_TARGET ?? `http://localhost:${process.env.WORKER_PORT ?? 8787}`
       }
     }
   },
   build: {
-    outDir: 'dist',
+    // 直接产出到 Worker 的静态资源目录：Worker 以 /panel 提供管理面板。
+    outDir: '../worker/public/panel',
+    emptyOutDir: true,
     sourcemap: false
   }
 });
